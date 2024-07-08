@@ -17,7 +17,7 @@ More details about the methodology can be found at:
 ## Social Networking
 * [linkedin joaquin](https://www.linkedin.com/in/joaquin-gonzalez-budino/)
 * [joaquin's portfolio](https://joagzb.com)
-* [linkedin Nicolas](https://www.linkedin.com/in/joaquin-gonzalez-budino/)
+* [linkedin Nicolas](https://www.linkedin.com/in/nicolás-giuliano-204a301a4/)
 
 ## licence
  - [GPLv3](./LICENSE)

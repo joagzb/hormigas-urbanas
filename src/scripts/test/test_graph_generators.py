@@ -1,13 +1,19 @@
 import numpy as np
-from configuration.graph_settings import settings
+from ..utils.weights import *
 
+def generate_square_city_graph(size, fixed_weight):
+    """
+    Generate a square city graph with the given size and fixed edge weight.
 
-def generate_square_city_graph():
-    size=10
-    fixed_weight=0.1
+    Parameters:
+        size (int): The size of the city (number of nodes per side).
+        fixed_weight (float): The weight for each edge.
 
+    Returns:
+        dict: A dictionary representing the graph with nodes, connections, and weights.
+    """
     graph = {
-        'node_index': list(range(size * size)),
+        'node_index': set(range(size * size)),
         'connections': [],
         'weights': []
     }
@@ -15,69 +21,72 @@ def generate_square_city_graph():
     for i in range(size):
         for j in range(size):
             current_node = i * size + j
-            if i > 0:  # connect to the node North
-                graph['connections'].append((current_node, current_node - size))
-                graph['weights'].append(fixed_weight)
-            if i < size - 1:  # connect to the node South
-                graph['connections'].append((current_node, current_node + size))
-                graph['weights'].append(fixed_weight)
-            if j > 0:  # connect to the node on the West
-                graph['connections'].append((current_node, current_node - 1))
-                graph['weights'].append(fixed_weight)
-            if j < size - 1:  # connect to the node on the East
-                graph['connections'].append((current_node, current_node + 1))
-                graph['weights'].append(fixed_weight)
+
+            graph['connections'].append((current_node, list()))
+            graph['weights'].append((current_node, list()))
+
+            # Connect to the node North
+            if i > 0:
+                graph['connections'][-1][1].append(current_node - size)
+                graph['weights'][-1][1].append(fixed_weight)
+
+            # Connect to the node South
+            if i < size - 1:
+                graph['connections'][-1][1].append(current_node + size)
+                graph['weights'][-1][1].append(fixed_weight)
+
+            # Connect to the node West
+            if j > 0:
+                graph['connections'][-1][1].append(current_node - 1)
+                graph['weights'][-1][1].append(fixed_weight)
+
+            # Connect to the node East
+            if j < size - 1:
+                graph['connections'][-1][1].append(current_node + 1)
+                graph['weights'][-1][1].append(fixed_weight)
+
+    graph['connections'] = dict(graph['connections'])
+    graph['weights'] = dict(graph['weights'])
 
     return graph
 
 
-def generate_bus_line_square_city():
-    size=10
-    fixed_weight=0.1
-    bus_index_multiplier=1000
+def generate_bus_line_square_city(size, fixed_weight):
+    """
+    Generate a bus line graph in a square city with the given size and fixed edge weight.
 
-    distance=fixed_weight * settings["bus_time_travel_cost"]
-    cost_get_on = (fixed_weight * settings["wait_for_bus_cost"] *
-                                settings["pay_for_bus_cost"] * settings["bus_time_travel_cost"])
+    Parameters:
+        size (int): The size of the city (number of nodes per side).
+        fixed_weight (float): The weight for each edge.
 
-    buses_graph=[]
+    Returns:
+        list: A list containing the bus line graph.
+    """
+    bus_node_index_offset = 1000
+    distance = calculate_bus_time_travel_cost(fixed_weight)
+
     bus_dict = {
         'name': "bus line UNIQUE",
-        'node_map_index': np.array(range(5,96,size)),
-        'node_bus_index': np.array(range(5,96,size)) + bus_index_multiplier,
+        'stops': [],  # Connections between map nodes and bus nodes
+        'route': np.array(range(5, size*size - size + 5, size)),  # Sequence of nodes in the map the bus will go through
+        'node_bus_index': set(np.array(range(5, size*size - size + 5, size)) + bus_node_index_offset),
         'connections': [],
         'weights': []
     }
 
     for row in range(size):
-        current_node = (row*10)+5
-        bus_current_node = current_node + bus_index_multiplier
-        if row < size - 1:  # connect to the node South
-                bus_dict['connections'].append((current_node, bus_current_node))
-                bus_dict['weights'].append(cost_get_on)
-                bus_dict['connections'].append((bus_current_node, bus_current_node + size))
-                bus_dict['weights'].append(distance)
+        current_node = (row * size) + 5
+        bus_current_node = current_node + bus_node_index_offset
 
-    buses_graph.append(bus_dict)
-    return buses_graph
+        # Add bus stop connection
+        bus_dict['stops'].append((current_node, bus_current_node))
 
-def generate_square_city_graph_adjacency_matrix():
-    size=10
-    distance = 0.1
+        # Connect to the node South
+        if row < size - 1:
+            bus_dict['connections'].append((bus_current_node, [bus_current_node + size]))
+            bus_dict['weights'].append((bus_current_node, [distance]))
 
-    num_nodes = size * size
-    adjacency_matrix = np.zeros((num_nodes, num_nodes), dtype=float)
+    bus_dict['connections'] = dict(bus_dict['connections'])
+    bus_dict['weights'] = dict(bus_dict['weights'])
 
-    for i in range(size):
-        for j in range(size):
-            current_node = i * size + j
-            if i > 0:  # connect to the node North
-                adjacency_matrix[current_node, current_node - size] = distance
-            if i < size - 1:  # connect to the node South
-                adjacency_matrix[current_node, current_node + size] = distance
-            if j > 0:  # connect to the node on the West
-                adjacency_matrix[current_node, current_node - 1] = distance
-            if j < size - 1:  # connect to the node on the East
-                adjacency_matrix[current_node, current_node + 1] = distance
-
-    return adjacency_matrix
+    return [bus_dict]

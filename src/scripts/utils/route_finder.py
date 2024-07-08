@@ -33,11 +33,15 @@ def dijkstra(graph, start_node, end_node):
         path = path + [current_node]
 
         # Check all neighbors of the current node
-        neighbors = [(conn[1], weight) for conn, weight in zip(graph['connections'], graph['weights']) if conn[0] == current_node]
-        for neighbor, weight in neighbors:
-            distance = current_distance + weight
-            if distance < distances[neighbor]:
-                distances[neighbor] = distance
-                heapq.heappush(priority_queue, (distance, neighbor, path))
+        if current_node in graph['connections']:
+            neighbors = graph['connections'][current_node]
+            weights = graph['weights'][current_node]
+            for i, neighbor in enumerate(neighbors):
+                if neighbor in graph['node_index']:  # Ensure neighbor is within node_index
+                    weight = weights[i]
+                    distance = current_distance + weight
+                    if distance < distances[neighbor]:
+                        distances[neighbor] = distance
+                        heapq.heappush(priority_queue, (distance, neighbor, path))
 
     return None  # Return None if no path is found
