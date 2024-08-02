@@ -125,19 +125,22 @@ def merge_bus_and_map_graph(map_graph, buses_graph):
         map_graph["connections"].update(bus_graph["connections"])
         map_graph["weights"].update(bus_graph["weights"])
 
-        # Add bus stops to the map graph
+        # Add bus stops to get on
         for i in range(len(bus_graph["route"]) - 1):
-            # Calculate the cost to get on and off the bus
             route_weight = get_connection_weight(map_graph, bus_graph["route"][i], bus_graph["route"][i + 1])
             cost_get_on = calculate_bus_get_on_cost(route_weight)
-            cost_get_off = calculate_bus_get_off_cost()
 
             # Add connections and weights for getting on the bus
             start_map_node, start_bus_node = bus_graph["stops"][i]
             map_graph["connections"][start_map_node].append(start_bus_node)
             map_graph["weights"][start_map_node].append(cost_get_on)
 
+        # Add bus stops to get off
+        for i in range(len(bus_graph["route"])):
+            cost_get_off = calculate_bus_get_off_cost()
+
             # Add connections and weights for getting off the bus
+            start_map_node, start_bus_node = bus_graph["stops"][i]
             map_graph["connections"][start_bus_node].append(start_map_node)
             map_graph["weights"][start_bus_node].append(cost_get_off)
 
@@ -145,3 +148,12 @@ def merge_bus_and_map_graph(map_graph, buses_graph):
     map_graph["buses"] = buses_graph
 
     return map_graph
+
+
+def generate_pheromone_map(map_graph, initial_lvl):
+    pheromone_path = []
+
+    for node,connection in map_graph["connections"].items():
+        pheromone_path.append([node, initial_lvl + np.zeros(len(connection))])
+
+    return dict(pheromone_path)

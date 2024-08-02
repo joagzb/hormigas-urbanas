@@ -1,45 +1,74 @@
 import numpy as np
-from utils.roulette_selection import roulette_wheel_selection
+from ..utils.roulette_selection import roulette_wheel_selection
 
-def ant_solution_ACO(adj_matrix, pheromone_matrix, start_node, end_node, heuristic_weight, pheromone_weight):
+def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, heuristic_weight:float, pheromone_weight:float):
     """
+    Executes the Ant Colony Optimization (ACO) algorithm to find a path from a start node to an end node in a graph.
 
     Parameters:
-    adj_matrix: Adjacency matrix where each arc (row i, column j) has the cost
-    pheromone_matrix: Pheromone matrix for each edge
-    start_node: Starting node (ant hill)
-    end_node: Destination node (food)
-    heuristic_weight: Importance of the heuristic function
-    pheromone_weight: Importance of pheromone trails
+    -----------
+    graph_map : dict
+        A dictionary representing the graph structure, where:
+        - "connections": A dict with keys as nodes and values as lists of neighboring nodes.
+        - "weights": A dict with keys as nodes and values as lists of corresponding edge weights to neighboring nodes.
+
+    pheromone_graph : dict
+        A dictionary where keys are nodes and values are lists representing the pheromone levels on the edges to neighboring nodes.
+
+    start_node : int
+        The node where the ant starts its search (ant hill).
+
+    end_node : int
+        The node where the ant aims to reach (food).
+
+    heuristic_weight : float
+        The exponent applied to the pheromone levels, representing the importance of the pheromone trail in the decision process.
+
+    pheromone_weight : float
+        The exponent applied to the inverse of the weights (costs), representing the importance of the heuristic (desirability) in the decision process.
 
     Returns:
-    path: List of visited nodes containing the solution path found by the ant
+    --------
+    path : list of int or float
+        A list of nodes representing the solution path found by the ant. If the ant gets "lost" and cannot find a valid path, `float('inf')` is appended to the path.
+
+    solution_cost : float
+        The total cost associated with the solution path. If the ant gets lost, this value is `float('inf')`.
     """
 
     solution_path = [start_node]
+    solution_cost = 0
 
-    while solution_path[0] != end_node:
-        current_node = solution_path[0]
-        neighbors = np.where(adj_matrix[current_node, :] != 0)[0]  # Find neighbors of the current node
-        neighbors = neighbors[~np.isin(neighbors, solution_path)]  # Do not revisit nodes
+    while solution_path[-1] != end_node:
+        current_node = solution_path[-1]
+        neighbors = np.array(graph_map["connections"][current_node])
+        neighbors_weights = np.array(graph_map["weights"][current_node])
+        neighbors_pheromones = np.array(pheromone_graph[current_node])
 
-        if neighbors.size == 0:
+        filter_visited_nodes_mask = ~np.isin(neighbors, solution_path)
+        neighbors = neighbors[filter_visited_nodes_mask]
+        neighbors_weights = neighbors_weights[filter_visited_nodes_mask]
+        neighbors_pheromones = neighbors_pheromones[filter_visited_nodes_mask]
+
+        if len(neighbors) == 0:
             solution_path.append(float('inf'))  # The ant is lost. Stop the search
             break
 
         # Calculate probabilities for moving to the next node
-        pheromone_values = pheromone_matrix[current_node, neighbors] ** heuristic_weight
-        heuristic_values = (1.0 / adj_matrix[current_node, neighbors]) ** pheromone_weight
+        pheromone_values = neighbors_pheromones ** heuristic_weight
+        heuristic_values = (1.0 / neighbors_weights) ** pheromone_weight
         sum_values = np.sum(pheromone_values * heuristic_values)
         probabilities = (pheromone_values * heuristic_values) / sum_values
 
         # Select the next node based on the roulette wheel selection
         next_node_index = roulette_wheel_selection(probabilities)
-        solution_path.insert(0, neighbors[next_node_index])
+        solution_path.append(neighbors[next_node_index-1])
 
     if solution_path[-1] != float('inf'):  # If the ant is not lost, return the path and calculate the total cost
         for i in range(len(solution_path) - 1):
-          total_cost = sum(adj_matrix[solution_path[i + 1], solution_path[i]])
-          solution_path.append(total_cost)
+          neighbor_selected_index = graph_map["connections"][solution_path[i]].index(solution_path[i + 1])
+          solution_cost += graph_map["weights"][solution_path[i]][neighbor_selected_index]
+    else:
+        solution_cost = float('inf')
 
-    return solution_path
+    return solution_path,solution_cost

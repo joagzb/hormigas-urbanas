@@ -74,7 +74,7 @@ def generate_bus_line_square_city(size, fixed_weight):
         'weights': []
     }
 
-    for row in range(size):
+    for row in range(size - 1):
         current_node = (row * size) + 5
         bus_current_node = current_node + bus_node_index_offset
 
@@ -83,8 +83,12 @@ def generate_bus_line_square_city(size, fixed_weight):
 
         # Connect to the node South
         if row < size - 1:
-            bus_dict['connections'].append((bus_current_node, [bus_current_node + size]))
-            bus_dict['weights'].append((bus_current_node, [distance]))
+            if (bus_current_node + size) in bus_dict['node_bus_index']:
+                bus_dict['connections'].append((bus_current_node, [bus_current_node + size]))
+                bus_dict['weights'].append((bus_current_node, [distance]))
+            else:
+                bus_dict['connections'].append((bus_current_node, []))
+                bus_dict['weights'].append((bus_current_node, []))
 
     bus_dict['connections'] = dict(bus_dict['connections'])
     bus_dict['weights'] = dict(bus_dict['weights'])
