@@ -1,7 +1,7 @@
 import numpy as np
 from utils.roulette_selection import roulette_wheel_selection
 
-def ant_solution_ACS(adj_matrix, pheromone_matrix, start_node, end_node, q0, pheromone_weight, heuristic_weight):
+def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, q0, heuristic_weight:float, pheromone_weight:float):
     """
     Ant Colony System (ACS) solution for a single ant traversing the graph to find a path.
 
@@ -18,35 +18,47 @@ def ant_solution_ACS(adj_matrix, pheromone_matrix, start_node, end_node, q0, phe
     path: solution path found by the ant
     """
 
-    path = [start_node]
+    solution_path = [start_node]
+    solution_cost = 0
 
-    while path[0] != end_node:
-        current_node = path[0]
-        neighbors = np.where(adj_matrix[current_node, :] != 0)[0]  # Find neighboring nodes of the current node
-        neighbors = neighbors[~np.isin(neighbors, path)]  # Do not choose nodes that have already been visited
+    while solution_path[-1] != end_node:
+        current_node = solution_path[-1]
+        neighbors = np.array(graph_map["connections"][current_node])
+        neighbors_weights = np.array(graph_map["weights"][current_node])
+        neighbors_pheromones = np.array(pheromone_graph[current_node])
+
+        filter_visited_nodes_mask = ~np.isin(neighbors, solution_path)
+        neighbors = neighbors[filter_visited_nodes_mask]
+        neighbors_weights = neighbors_weights[filter_visited_nodes_mask]
+        neighbors_pheromones = neighbors_pheromones[filter_visited_nodes_mask]
 
          # The ant is lost. Stop the search
         if len(neighbors) == 0:
-            path.append(float('inf'))
+            solution_path.append(np.inf)
             break
 
         # Probabilistic choice of the next node (proposed by Ant Colony System ACS)
         q = np.random.rand()
         if q <= q0:
-            Z = (pheromone_matrix[current_node, neighbors] ** pheromone_weight) * ((1.0 / adj_matrix[current_node, neighbors]) ** heuristic_weight)
+            Z = (neighbors_pheromones ** pheromone_weight) * ((1.0 / neighbors_weights) ** heuristic_weight)
             next_node = neighbors[np.argmax(Z)]
-            path.insert(0, next_node)
+            solution_path.append(next_node)
         else:
-            total = np.sum((pheromone_matrix[current_node, neighbors] ** pheromone_weight) * ((1.0 / adj_matrix[current_node, neighbors]) ** heuristic_weight))
-            probabilities = ((pheromone_matrix[current_node, neighbors] ** pheromone_weight) * ((1.0 / adj_matrix[current_node, neighbors]) ** heuristic_weight)) / total
-            next_node = neighbors[roulette_wheel_selection(probabilities)]
-            path.insert(0, next_node)
+            pheromone_values = neighbors_pheromones ** heuristic_weight
+            heuristic_values = (1.0 / neighbors_weights) ** pheromone_weight
+            sum_values = np.sum(pheromone_values * heuristic_values)
+            probabilities = (pheromone_values * heuristic_values) / sum_values
+
+            # Select the next node based on the roulette wheel selection
+            next_node_index = roulette_wheel_selection(probabilities)
+            solution_path.append(neighbors[next_node_index-1])
 
     # return the path and calculate the incurred costs
-    if path[-1] != float('inf'):
-        total_cost = 0
-        for i in range(len(path) - 1):
-            total_cost += adj_matrix[path[i + 1], path[i]]
-        path.append(total_cost)
+    if solution_path[-1] != np.inf:
+        for i in range(len(solution_path) - 1):
+            neighbor_selected_index = graph_map["connections"][solution_path[i]].index(solution_path[i + 1])
+            solution_cost += graph_map["weights"][solution_path[i]][neighbor_selected_index]
+    else:
+        solution_cost = np.inf
 
-    return path
+    return solution_path, solution_cost

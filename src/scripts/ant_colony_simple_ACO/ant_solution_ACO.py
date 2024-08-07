@@ -51,7 +51,7 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_
         neighbors_pheromones = neighbors_pheromones[filter_visited_nodes_mask]
 
         if len(neighbors) == 0:
-            solution_path.append(float('inf'))  # The ant is lost. Stop the search
+            solution_path.append(np.inf)  # The ant is lost. Stop the search
             break
 
         # Calculate probabilities for moving to the next node
@@ -64,11 +64,11 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_
         next_node_index = roulette_wheel_selection(probabilities)
         solution_path.append(neighbors[next_node_index-1])
 
-    if solution_path[-1] != float('inf'):  # If the ant is not lost, return the path and calculate the total cost
+    if solution_path[-1] != np.inf:  # If the ant is not lost, return the path and calculate the total cost
         for i in range(len(solution_path) - 1):
           neighbor_selected_index = graph_map["connections"][solution_path[i]].index(solution_path[i + 1])
           solution_cost += graph_map["weights"][solution_path[i]][neighbor_selected_index]
     else:
-        solution_cost = float('inf')
+        solution_cost = np.inf
 
     return solution_path,solution_cost

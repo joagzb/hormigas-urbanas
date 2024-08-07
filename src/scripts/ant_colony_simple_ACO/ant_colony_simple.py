@@ -4,7 +4,7 @@ from collections import Counter
 from ..utils.generators import generate_pheromone_map
 from .ant_solution_ACO import ant_solution_ACO
 
-def ACO(graph_map, start_point, end_point, ants_number, evaporation_rate, initial_pheromone_lvl, heuristic_weight, pheromone_weight):
+def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_pheromone_lvl, heuristic_weight, pheromone_weight):
     """
     Performs Simple Ant Colony Optimization (ACO) to find the optimal path between start and end nodes in a graph.
 
@@ -15,10 +15,10 @@ def ACO(graph_map, start_point, end_point, ants_number, evaporation_rate, initia
         - "connections": A dict with keys as nodes and values as lists of neighboring nodes.
         - "weights": A dict with keys as nodes and values as lists of corresponding edge weights to neighboring nodes.
 
-    start_point : int
+    start_node : int
         The starting node (ant hill) where all ants begin their journey.
 
-    end_point : int
+    end_node : int
         The destination node (food) where all ants are trying to reach.
 
     ants_number : int
@@ -53,7 +53,7 @@ def ACO(graph_map, start_point, end_point, ants_number, evaporation_rate, initia
 
     pheromone_graph = generate_pheromone_map(graph_map,initial_pheromone_lvl)
     routes = [None] * ants_number  # Paths taken by each ant
-    distances = np.zeros(ants_number)  # To sort solutions from best to worst
+    distances = np.zeros(ants_number)
 
     epochs = 0
     counter = 0
@@ -62,7 +62,7 @@ def ACO(graph_map, start_point, end_point, ants_number, evaporation_rate, initia
     while counter < ants_number:
         # Each ant makes its journey
         for ant in range(ants_number):
-            path_found,path_distance = ant_solution_ACO(graph_map, pheromone_graph, start_point, end_point, heuristic_weight, pheromone_weight)
+            path_found,path_distance = ant_solution_ACO(graph_map, pheromone_graph, start_node, end_node, heuristic_weight, pheromone_weight)
             routes[ant] = path_found
             distances[ant] = path_distance
 
@@ -73,7 +73,7 @@ def ACO(graph_map, start_point, end_point, ants_number, evaporation_rate, initia
         # Global pheromone deposition
         for ant in range(ants_number):
             if distances[ant] != np.inf:
-                for i in range(len(routes[ant]) - 2):
+                for i in range(len(routes[ant]) - 1):
                     current_route_node = routes[ant][i]
                     next_route_node = routes[ant][i+1]
                     indx_next_node = graph_map["connections"][current_route_node].index(next_route_node)
@@ -87,8 +87,8 @@ def ACO(graph_map, start_point, end_point, ants_number, evaporation_rate, initia
         epochs += 1
 
     # Return the optimal path
-    path = routes[0][:-1]
-    cost = distances[0]
+    optimal_path = routes[0]
+    total_distance = distances[0]
     total_time = time() - start_time
 
-    return path, cost, total_time, epochs
+    return optimal_path, total_distance, total_time, epochs
