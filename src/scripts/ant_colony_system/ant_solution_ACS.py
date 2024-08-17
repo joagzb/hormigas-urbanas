@@ -1,7 +1,7 @@
 import numpy as np
 from utils.roulette_selection import roulette_wheel_selection
 
-def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, q0, heuristic_weight:float, pheromone_weight:float):
+def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, q0: float, heuristic_weight:float, pheromone_weight:float):
     """
     Ant Colony System (ACS) solution for a single ant traversing the graph to find a path.
 
@@ -40,7 +40,7 @@ def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_
         # Probabilistic choice of the next node (proposed by Ant Colony System ACS)
         q = np.random.rand()
         if q <= q0:
-            Z = (neighbors_pheromones ** pheromone_weight) * ((1.0 / neighbors_weights) ** heuristic_weight)
+            Z = (neighbors_pheromones ** heuristic_weight) * ((1.0 / neighbors_weights) ** pheromone_weight)
             next_node = neighbors[np.argmax(Z)]
             solution_path.append(next_node)
         else:

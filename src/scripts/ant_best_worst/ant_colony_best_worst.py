@@ -2,107 +2,119 @@ import numpy as np
 import time
 from collections import Counter
 from ant_solution_ABW import ant_solution_best_worst
+from scripts.utils.generators import generate_pheromone_map
+from configuration.algorithm_settings import settings
 
-def ABW(adj_matrix, start_node, end_node, num_ants, evaporation_rate, max_epochs, initial_pheromone, alpha, beta):
+
+def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epochs, initial_pheromone_lvl, heuristic_weight, pheromone_weight):
     """
-    Ant Colony Optimization with Best-Worst Ant System.
+    Perform Ant Colony Optimization using the Best-Worst Ant System (BWAS) to find the shortest path in a graph.
 
     Parameters:
-    adj_matrix: adjacency matrix where each arc (row i, column j) has the cost
-    start_node: root node (ant nest)
-    end_node: destination
-    num_ants: number of ants to perform the experiment
-    evaporation_rate: pheromone evaporation rate between [0,1]
-    max_epochs: maximum number of epochs
-    initial_pheromone: initial pheromone level on all arcs
-    alpha and beta: weigh the importance of the heuristic and pheromone values
+    - graph_map (dict): A dictionary containing the adjacency matrix and node connections. Expected keys are:
+        - "adjacency_matrix" (2D array-like): Matrix where each element (i, j) represents the cost of traveling from node i to node j.
+        - "connections" (dict): Dictionary where each key is a node and each value is a list of connected nodes.
+    - start_node (int): The starting node (ant nest) in the graph.
+    - end_node (int): The destination node in the graph.
+    - ants_number (int): The number of ants (agents) used to explore paths in the graph.
+    - global_evap_rate (float): The rate at which pheromone evaporates on each edge, in the range [0, 1].
+    - max_epochs (int): The maximum number of iterations (epochs) for the optimization process.
+    - initial_pheromone_lvl (float): The initial pheromone level assigned to all edges in the graph.
+    - heuristic_weight (float): The weight for the heuristic information in path decisions.
+    - pheromone_weight (float): The weight for the pheromone trail information in path decisions.
 
     Returns:
-    optimal_path: list containing the sequence of optimal nodes
-    global_best_cost: total distance from start to end
-    exec_time: execution time
-    epochs: number of epochs performed
+    - optimal_path (list of int): The sequence of nodes representing the optimal path found.
+    - global_best_cost (float): The total cost (distance) of the optimal path.
+    - exec_time (float): The total execution time of the algorithm in seconds.
+    - epochs (int): The number of epochs (iterations) performed during the optimization.
+
+    Notes:
+    - The function optimizes paths by having ants explore the graph, update pheromone levels, and utilize both pheromone and heuristic information.
+    - Pheromone levels are updated based on the best and worst solutions found by the ants.
+    - If the best solution stagnates for a number of epochs, the pheromone levels are reset, and the optimization continues.
     """
 
-    start_time = time.time()
-    n, m = adj_matrix.shape
-    pheromone_matrix = initial_pheromone + np.zeros((n, m))
-    paths = [None] * num_ants  # Paths taken by each ant
-    distances = np.zeros(num_ants)  # To order solutions from best to worst and check how many ants follow the same path
-    threshold = 0  # Used as a parameter in pheromone mutation calculation
-    iteration_counter = 0  # Used as a parameter in pheromone mutation calculation
+    pheromone_graph = generate_pheromone_map(graph_map, initial_pheromone_lvl)
+    routes = [None] * ants_number  # Paths taken by each ant
+    distances = np.zeros(ants_number)  # Distances of the paths found by each ant
 
-    global_best_cost = float('inf')
-    stagnant_count = 0  # Counts how many epochs the best solution stays the same
+    epoch_before_restart = 0  # Used for pheromone mutation calculation
+    stagnant_count = 0  # Counter for epochs where the best solution remains unchanged
+    max_stagnant_count = 8  # Threshold for stagnation before pheromone reset
+    global_best_cost = np.inf  # Initial global best cost set to infinity
+    min_pheromone_lvl = settings['f_min']  # Minimum pheromone level allowed on trails
+
     epochs = 0
-    consecutive_same_path_count = 0
+    same_path_solution_counter = 0
 
-    while consecutive_same_path_count < num_ants:
-        for h in range(num_ants):  # Each ant makes its journey
-            paths[h] = find_ant_solution(adj_matrix, pheromone_matrix, start_node, end_node, alpha, beta)
-            distances[h] = paths[h][-1]
+    start_time = time()
+    while same_path_solution_counter < ants_number:
+        # Each ant finds a path
+        for ant in range(ants_number):
+            path_found, path_distance = ant_solution_best_worst(graph_map, pheromone_graph, start_node, end_node, heuristic_weight, pheromone_weight)
+            routes[ant] = path_found
+            distances[ant] = path_distance
 
-        # Global pheromone evaporation
-        pheromone_matrix *= (1 - evaporation_rate)
+        # Update global pheromone levels with evaporation
+        for key in pheromone_graph:
+            pheromone_graph[key] *= (1 - global_evap_rate)
 
-        # Sort results to find the best and worst ant
-        sorted_indices = np.argsort(distances)
-        global_best_cost = paths[sorted_indices[0]][-1]
+        # Sort ants based on their path distances
+        sorted_indices_by_ant_solution = np.argsort(distances)
+        best_ant = sorted_indices_by_ant_solution[0]
+        worst_ant = sorted_indices_by_ant_solution[-1]
 
-        # Deposit pheromone on the paths of the 2 best ants
-        for best in range(2):
-            if paths[sorted_indices[best]][-1] != float('inf'):
-                for i in range(len(paths[sorted_indices[best]]) - 2):
-                    pheromone_matrix[paths[sorted_indices[best]][i+1], paths[sorted_indices[best]][i]] += (
-                        evaporation_rate * (1 / paths[sorted_indices[best]][-1])
-                    )
-                    if best == 0:
-                        threshold += pheromone_matrix[paths[sorted_indices[best]][i+1], paths[sorted_indices[best]][i]]
+        # Update pheromone on the best ant's path
+        if distances[best_ant] != np.inf:
+            best_ant_pheromone_trail = []
+            for i in range(len(routes[best_ant]) - 1):
+                current_path_node = routes[best_ant][i]
+                next_path_node = routes[best_ant][i + 1]
+                indx_next_node = graph_map["connections"][current_path_node].index(next_path_node)
+                pheromone_graph[current_path_node][indx_next_node] += 1 / distances[best_ant]
+                best_ant_pheromone_trail.append(pheromone_graph[current_path_node][indx_next_node])
 
-        # Evaporate pheromone on the path of the worst ant
-        worst_index = sorted_indices[-1]
-        for i in range(len(paths[worst_index]) - 2):
-            if not (paths[worst_index][i] in paths[sorted_indices[0]] and paths[worst_index][i+1] in paths[sorted_indices[0]]):
-                pheromone_matrix[paths[worst_index][i+1], paths[worst_index][i]] *= (1 - evaporation_rate)
+            global_best_cost = distances[best_ant]
+            threshold = np.mean(best_ant_pheromone_trail)
 
-        # Pheromone mutation
-        threshold /= (len(paths[sorted_indices[0]]) - 2)
-        for j in range(1, num_ants - 1):
-            for i in range(len(paths[sorted_indices[j]]) - 2):
-                mutation = ((epochs - iteration_counter) / (max_epochs - iteration_counter)) * np.random.rand() * threshold
-                if np.random.rand() < 0.5:
-                    pheromone_matrix[paths[sorted_indices[j]][i+1], paths[sorted_indices[j]][i]] += mutation
-                else:
-                    pheromone_matrix[paths[sorted_indices[j]][i+1], paths[sorted_indices[j]][i]] -= mutation
-                    if pheromone_matrix[paths[sorted_indices[j]][i+1], paths[sorted_indices[j]][i]] < 0:
-                        pheromone_matrix[paths[sorted_indices[j]][i+1], paths[sorted_indices[j]][i]] = 0
+        # Evaporate pheromone on the worst ant's path
+        for i in range(len(routes[worst_ant]) - 2):
+            current_path_node = routes[worst_ant][i]
+            next_path_node = routes[worst_ant][i + 1]
+            indx_next_node = graph_map["connections"][current_path_node].index(next_path_node)
+            if not (current_path_node in routes[best_ant] and next_path_node in routes[best_ant]):
+                pheromone_graph[current_path_node][indx_next_node] *= (1 - global_evap_rate)
 
-        # Check algorithm termination criteria
-        distances = distances[distances != float('inf')]  # Paths of lost ants don't count
-        if distances.size > 0:
-            most_common_distance, count = Counter(distances).most_common(1)[0]
-            consecutive_same_path_count = count
+        # Perform pheromone trail mutation
+        mutation = ((epochs - epoch_before_restart) / (max_epochs - epoch_before_restart)) * np.random.rand() * threshold
+        for trail in pheromone_graph.keys():
+            if np.random.rand() < 0.5:
+                pheromone_graph[trail] += mutation
+            else:
+                pheromone_graph[trail] -= mutation
+                trail_values = pheromone_graph[trail]
+                trail_values[trail_values < min_pheromone_lvl] = min_pheromone_lvl
+                pheromone_graph[trail] = trail_values
+
+        # Check termination criteria
+        number_of_solutions = distances[distances != np.inf].size
+        if number_of_solutions > 0:
+            most_common_distance, same_path_solution_counter = Counter(distances[distances != np.inf]).most_common(1)[0]
 
         if most_common_distance != global_best_cost:
             stagnant_count += 1
-        else:
-            stagnant_count = 0
 
-        if stagnant_count == 8 or epochs == max_epochs:
-            iteration_counter = epochs
-            consecutive_same_path_count = 0
-            pheromone_matrix = initial_pheromone + np.zeros((n, m))
-            # Deposit pheromone on the path of the best ant
-            for i in range(len(paths[sorted_indices[0]]) - 2):
-                pheromone_matrix[paths[sorted_indices[0]][i+1], paths[sorted_indices[0]][i]] += (
-                    evaporation_rate * (1 / paths[sorted_indices[0]][-1])
-                )
+        if stagnant_count == max_stagnant_count or epochs == max_epochs:
+            epoch_before_restart = epochs
+            stagnant_count = 0
+            max_epochs = max_epochs**2
+            pheromone_graph = generate_pheromone_map(graph_map, initial_pheromone_lvl)
 
         epochs += 1
 
-    # Return the optimal path
-    optimal_path = paths[0][:-1]
-    global_best_cost = paths[0][-1]
-    exec_time = time.time() - start_time
+    optimal_path = routes[0]  # Optimal path sequence
+    total_distance = distances[0]  # Total distance of the optimal path
+    total_time = time() - start_time
 
-    return optimal_path, global_best_cost, exec_time, epochs
+    return optimal_path, total_distance, total_time, epochs
