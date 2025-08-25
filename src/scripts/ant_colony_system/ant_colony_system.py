@@ -1,8 +1,8 @@
 import numpy as np
 from time import time
 from collections import Counter
-from ant_solution_ACS import ant_solution_ACS
-from utils.generators import generate_pheromone_map
+from .ant_solution_ACS import ant_solution_ACS
+from ..utils.generators import generate_pheromone_map
 
 def ACS(graph_map, start_node, end_node, ants_number, global_evap_rate, local_evap_rate, transition_prob, initial_pheromone_lvl, heuristic_weight, pheromone_weight):
     """

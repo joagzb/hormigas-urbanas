@@ -1,9 +1,9 @@
 import numpy as np
-import time
+from time import time
 from collections import Counter
-from ant_solution_ABW import ant_solution_best_worst
-from scripts.utils.generators import generate_pheromone_map
-from configuration.algorithm_settings import settings
+from .ant_solution_ABW import ant_solution_best_worst
+from ..utils.generators import generate_pheromone_map
+from ...configuration.algorithm_settings import settings
 
 
 def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epochs, initial_pheromone_lvl, heuristic_weight, pheromone_weight):

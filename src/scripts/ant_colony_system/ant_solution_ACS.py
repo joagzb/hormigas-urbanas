@@ -1,5 +1,5 @@
 import numpy as np
-from utils.roulette_selection import roulette_wheel_selection
+from ..utils.roulette_selection import roulette_wheel_selection
 
 def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, q0: float, heuristic_weight:float, pheromone_weight:float):
     """

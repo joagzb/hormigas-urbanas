@@ -1,5 +1,5 @@
 import math
-from configuration.graph_settings import settings
+from ...configuration.graph_settings import settings
 
 def get_connection_weight(graph, start_node, end_node):
     """
@@ -46,8 +46,12 @@ def haversine(lat1, lon1, lat2, lon2):
     return distance
 
 def calculate_bus_get_on_cost(route_weight):
-    return (route_weight * settings["wait_for_bus_cost"] *
-                                settings["pay_for_bus_cost"] * settings["bus_time_travel_cost"])
+    return (
+        route_weight
+        * settings["wait_for_bus_cost"]
+        * settings["pay_for_bus_cost"]
+        * settings["bus_time_travel_cost"]
+    )
 
 def calculate_bus_get_off_cost():
     return settings["bus_get_off"]

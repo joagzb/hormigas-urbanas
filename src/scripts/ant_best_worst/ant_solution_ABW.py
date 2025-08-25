@@ -1,5 +1,5 @@
 import numpy as np
-from utils.roulette_selection import roulette_wheel_selection
+from ..utils.roulette_selection import roulette_wheel_selection
 
 def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: int, end_node: int, heuristic_weight: float, pheromone_weight: float):
     """
