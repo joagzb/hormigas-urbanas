@@ -1,5 +1,5 @@
 import numpy as np
-from utils.roulette_selection import roulette_wheel_selection
+from ..utils.roulette_selection import roulette_wheel_selection
 
 def ant_solution_MAXMIN(adj_matrix, pheromone_matrix, start_node, end_node, q0, alpha, beta):
     """

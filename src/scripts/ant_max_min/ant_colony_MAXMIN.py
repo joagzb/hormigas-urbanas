@@ -1,6 +1,7 @@
 import numpy as np
-import time
-from ant_solution_MAXMIN import ant_solution_MAXMIN
+from time import time
+from statistics import mode
+from .ant_solution_MAXMIN import ant_solution_MAXMIN
 
 def ACS_MAXMIN(adj_matrix, start_node, end_node, num_ants, p, q0, max_epochs, initial_pheromone, alpha, beta):
     """
@@ -23,7 +24,7 @@ def ACS_MAXMIN(adj_matrix, start_node, end_node, num_ants, p, q0, max_epochs, in
     t: Time taken by the algorithm to complete
     epocas: Number of epochs executed
     """
-    tic = time.time()
+    tic = time()
 
     n, m = adj_matrix.shape
     pheromone_matrix = initial_pheromone + np.zeros((n, m))  # Pheromone matrix initialized
@@ -67,7 +68,8 @@ def ACS_MAXMIN(adj_matrix, start_node, end_node, num_ants, p, q0, max_epochs, in
         # Check stopping criterion of the algorithm
         ant_distances = ant_distances[ant_distances != float('inf')]  # Paths lost by ants do not count
         if len(ant_distances) > 0:
-            _, number_ants_following_path = np.mode(ant_distances)  # Most followed path by ants (and how many ants follow it)
+            most_common_distance = mode(ant_distances)
+            number_ants_following_path = list(ant_distances).count(most_common_distance)
 
         # Correct stagnation conditions
         if epochs == max_epochs:
@@ -79,5 +81,5 @@ def ACS_MAXMIN(adj_matrix, start_node, end_node, num_ants, p, q0, max_epochs, in
     # Return the optimal path
     path = ant_paths[0][:-1]  # Exclude the last element which is the total distance
     costo_MejorGlobal = ant_paths[0][-1]  # Total distance of the optimal path
-    t = time.time() - tic
+    t = time() - tic
     return path, costo_MejorGlobal, t, epochs

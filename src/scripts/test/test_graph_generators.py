@@ -1,5 +1,5 @@
 import numpy as np
-from ..utils.weights import *
+from ..utils.weights import calculate_bus_time_travel_cost
 
 def generate_square_city_graph(size, fixed_weight):
     """

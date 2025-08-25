@@ -1,5 +1,10 @@
 import numpy as np
-from .weights import *
+from .weights import (
+    get_connection_weight,
+    calculate_bus_time_travel_cost,
+    calculate_bus_get_on_cost,
+    calculate_bus_get_off_cost,
+)
 from .route_finder import dijkstra
 
 def generate_random_graph(size, max_weight=100):
