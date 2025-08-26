@@ -8,35 +8,47 @@ from .weights import (
 from .route_finder import dijkstra
 
 def generate_random_graph(size, max_weight=100):
-    """
-    Generates a random graph dictionary for a graph of given size.
+    """Generate a random graph with connections between nearby nodes.
 
-    Parameters:
-    size (int): Number of nodes in the graph.
-    max_weight (float): Maximum weight for any edge.
+    The original implementation skipped nodes ``0`` and ``1`` when building
+    connections, which produced graphs with missing entries. This version
+    ensures that every node has an entry in the ``connections`` and ``weights``
+    dictionaries and limits neighbor lookups to valid node indices.
 
-    Returns:
-    dict: Random graph dictionary with node indices, connections, and weights.
+    Parameters
+    ----------
+    size: int
+        Number of nodes in the graph.
+    max_weight: float, optional
+        Maximum weight for any edge.
+
+    Returns
+    -------
+    dict
+        Random graph dictionary with node indices, connections and weights.
     """
+
     graph = {
-        'node_index': set(range(size)),
-        'connections': [],
-        'weights': []
+        "node_index": set(range(size)),
+        "connections": [],
+        "weights": [],
     }
 
-    for current_node in range(2,size):
-        graph['connections'].append((current_node, list()))
-        graph['weights'].append((current_node, list()))
-        for next_node in range(current_node-2,current_node+3):
-            if current_node != next_node:
-                # Randomly decide the distance between nodes (or no connection)
-                distance = np.random.randint(1, max_weight + 1) if np.random.random() > 0.3 else None  # 70% chance to have a connection
-                if distance is not None:
-                    graph['connections'][-1][1].append(next_node)
-                    graph['weights'][-1][1].append(distance)
+    for current_node in range(size):
+        graph["connections"].append((current_node, []))
+        graph["weights"].append((current_node, []))
 
-    graph['connections'] = dict(graph['connections'])
-    graph['weights'] = dict(graph['weights'])
+        for next_node in range(max(0, current_node - 2), min(size, current_node + 3)):
+            if current_node == next_node:
+                continue
+
+            if np.random.random() > 0.3:  # 70% chance to have a connection
+                distance = np.random.randint(1, max_weight + 1)
+                graph["connections"][-1][1].append(next_node)
+                graph["weights"][-1][1].append(distance)
+
+    graph["connections"] = dict(graph["connections"])
+    graph["weights"] = dict(graph["weights"])
 
     return graph
 
@@ -130,22 +142,15 @@ def merge_bus_and_map_graph(map_graph, buses_graph):
         map_graph["connections"].update(bus_graph["connections"])
         map_graph["weights"].update(bus_graph["weights"])
 
-        # Add bus stops to get on
-        for i in range(len(bus_graph["route"]) - 1):
-            route_weight = get_connection_weight(map_graph, bus_graph["route"][i], bus_graph["route"][i + 1])
-            cost_get_on = calculate_bus_get_on_cost(route_weight)
+        route = bus_graph["route"]
+        for i, (start_map_node, start_bus_node) in enumerate(bus_graph["stops"]):
+            if i < len(route) - 1:
+                route_weight = get_connection_weight(map_graph, route[i], route[i + 1])
+                cost_get_on = calculate_bus_get_on_cost(route_weight)
+                map_graph["connections"][start_map_node].append(start_bus_node)
+                map_graph["weights"][start_map_node].append(cost_get_on)
 
-            # Add connections and weights for getting on the bus
-            start_map_node, start_bus_node = bus_graph["stops"][i]
-            map_graph["connections"][start_map_node].append(start_bus_node)
-            map_graph["weights"][start_map_node].append(cost_get_on)
-
-        # Add bus stops to get off
-        for i in range(len(bus_graph["route"])):
             cost_get_off = calculate_bus_get_off_cost()
-
-            # Add connections and weights for getting off the bus
-            start_map_node, start_bus_node = bus_graph["stops"][i]
             map_graph["connections"][start_bus_node].append(start_map_node)
             map_graph["weights"][start_bus_node].append(cost_get_off)
 
@@ -156,9 +161,10 @@ def merge_bus_and_map_graph(map_graph, buses_graph):
 
 
 def generate_pheromone_map(map_graph, initial_lvl):
-    pheromone_path = []
+    """Create a pheromone map aligned with the graph connections."""
 
-    for node,connection in map_graph["connections"].items():
-        pheromone_path.append([node, initial_lvl + np.zeros(len(connection))])
+    pheromone_path = {}
+    for node, connections in map_graph["connections"].items():
+        pheromone_path[node] = initial_lvl + np.zeros(len(connections))
 
-    return dict(pheromone_path)
+    return pheromone_path

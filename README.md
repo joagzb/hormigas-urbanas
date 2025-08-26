@@ -28,7 +28,9 @@ More details about the methodology can be found at:
    ```bash
    python -m src.scripts.test.test_graph_generators
    ```
-   This command should run without errors and verifies that the environment is correctly configured.
+   The script generates a toy square city, adds a bus line and prints an example
+   route demonstrating that taking the bus is cheaper than walking the same
+   distance.
 
 ## Authors
 
