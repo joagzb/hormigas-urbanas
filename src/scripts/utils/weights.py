@@ -45,13 +45,14 @@ def haversine(lat1, lon1, lat2, lon2):
     distance = R * c
     return distance
 
-def calculate_bus_get_on_cost(route_weight):
-    return (
-        route_weight
-        * settings["wait_for_bus_cost"]
-        * settings["pay_for_bus_cost"]
-        * settings["bus_time_travel_cost"]
-    )
+def calculate_bus_get_on_cost():
+    """Return the cost incurred when boarding a bus.
+
+    The cost combines waiting for the bus and paying the fare. It is
+    independent of the route length and bus travel time, ensuring that
+    bus usage remains attractive compared to walking.
+    """
+    return settings["wait_for_bus_cost"] + settings["pay_for_bus_cost"]
 
 def calculate_bus_get_off_cost():
     return settings["bus_get_off"]

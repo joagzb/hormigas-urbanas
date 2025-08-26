@@ -145,8 +145,7 @@ def merge_bus_and_map_graph(map_graph, buses_graph):
         route = bus_graph["route"]
         for i, (start_map_node, start_bus_node) in enumerate(bus_graph["stops"]):
             if i < len(route) - 1:
-                route_weight = get_connection_weight(map_graph, route[i], route[i + 1])
-                cost_get_on = calculate_bus_get_on_cost(route_weight)
+                cost_get_on = calculate_bus_get_on_cost()
                 map_graph["connections"][start_map_node].append(start_bus_node)
                 map_graph["weights"][start_map_node].append(cost_get_on)
 

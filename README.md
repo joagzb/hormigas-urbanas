@@ -29,8 +29,8 @@ More details about the methodology can be found at:
    python -m src.scripts.test.test_graph_generators
    ```
    The script generates a toy square city, adds a bus line and prints an example
-   route demonstrating that taking the bus is cheaper than walking the same
-   distance.
+   route demonstrating that, thanks to a fixed boarding cost (waiting + paying),
+   taking the bus is noticeably cheaper than walking the same distance.
 
 ## Authors
 
