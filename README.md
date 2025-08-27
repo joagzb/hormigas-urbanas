@@ -61,6 +61,15 @@ python -m src.scripts.utils.graph_visualizer
 
 Bus nodes (IDs ≥ 1000) are shown in orange, and the selected path is drawn in red.
 
+## Running tests
+
+After installing the dependencies, you can run the test suite with [pytest](https://docs.pytest.org/en/stable/):
+
+```bash
+python -m pip install pytest
+pytest
+```
+
 ## Authors
 
 - Joaquin Gonzalez Budiño: <joa_gzb@hotmail.com>
