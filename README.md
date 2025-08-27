@@ -24,8 +24,13 @@ More details about the methodology can be found at:
 2. **Install dependencies**
    ```bash
    pip install -r src/requirements.txt
+   pip install pytest  # required for running the tests
    ```
-3. **Run a simple check**
+3. **Run the test suite**
+   ```bash
+   pytest
+   ```
+4. **Run a simple check**
    The repository includes small utilities that can be executed as Python modules. For example:
    ```bash
    python -m src.scripts.test.test_graph_generators
