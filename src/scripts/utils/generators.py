@@ -58,13 +58,13 @@ def generate_bus_graph(graph):
     buses_graph = []
 
     for route in bus_routes:
-        bus_node_index_offset = 1000 + (1000*len(buses_graph))
+        bus_node_index_offset = 1000 + (1000 * len(buses_graph))
 
         bus_dict = {
             'name': route['name'],
             'stops': [],  # Connections between map nodes and bus nodes
             'route': route['route'],
-            'node_bus_index': set(np.array(route['route']) + bus_node_index_offset),
+            'node_bus_index': {node + bus_node_index_offset for node in route['route']},
             'connections': [],
             'weights': []
         }
@@ -75,12 +75,17 @@ def generate_bus_graph(graph):
             bus_current_node = current_node + bus_node_index_offset
             bus_next_node = next_node + bus_node_index_offset
             original_weight = get_connection_weight(graph, current_node, next_node)
-            bus_dict['stops'].append((current_node, current_node + bus_node_index_offset))
+            bus_dict["stops"].append((current_node, bus_current_node))
 
-            if original_weight is not None:
-                cost = calculate_bus_time_travel_cost(original_weight)
-                bus_dict['connections'].append((bus_current_node, list([bus_next_node])))
-                bus_dict['weights'].append((bus_current_node, list([cost])))
+            if original_weight is None:
+                continue
+
+            cost = calculate_bus_time_travel_cost(original_weight)
+            bus_dict["connections"].append((bus_current_node, [bus_next_node]))
+            bus_dict["weights"].append((bus_current_node, [cost]))
+
+        last_stop = route["route"][-1]
+        bus_dict["stops"].append((last_stop, last_stop + bus_node_index_offset))
 
         bus_dict['connections'] = dict(bus_dict['connections'])
         bus_dict['weights'] = dict(bus_dict['weights'])
@@ -146,6 +151,8 @@ def merge_bus_and_map_graph(map_graph, buses_graph):
         for i, (start_map_node, start_bus_node) in enumerate(bus_graph["stops"]):
             if i < len(route) - 1:
                 route_weight = get_connection_weight(map_graph, route[i], route[i + 1])
+                if route_weight is None:
+                    continue
                 cost_get_on = calculate_bus_get_on_cost(route_weight)
                 map_graph["connections"][start_map_node].append(start_bus_node)
                 map_graph["weights"][start_map_node].append(cost_get_on)

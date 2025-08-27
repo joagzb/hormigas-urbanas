@@ -1,5 +1,5 @@
 import math
-from ...configuration.graph_settings import settings
+from configuration.graph_settings import settings
 
 def get_connection_weight(graph, start_node, end_node):
     """
@@ -11,10 +11,13 @@ def get_connection_weight(graph, start_node, end_node):
     end_node (int): The ending node of the connection.
 
     Returns:
-    float or None: The weight of the connection if found, None if not found.
+    float or None: The weight of the connection if found, ``None`` otherwise.
     """
-    weight_index = graph['connections'][start_node].index(end_node)
-    return graph['weights'][start_node][weight_index]
+    try:
+        weight_index = graph["connections"][start_node].index(end_node)
+        return graph["weights"][start_node][weight_index]
+    except (KeyError, ValueError, IndexError):
+        return None
 
 def haversine(lat1, lon1, lat2, lon2):
     """

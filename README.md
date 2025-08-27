@@ -23,7 +23,11 @@ More details about the methodology can be found at:
    ```bash
    pip install -r src/requirements.txt
    ```
-3. **Run a simple check**
+3. **Run tests**
+   ```bash
+   python -m unittest discover -s src/scripts/test -t src
+   ```
+4. **Run a simple check**
    The repository includes small utilities that can be executed as Python modules. For example:
    ```bash
    python -m src.scripts.test.test_graph_generators
