@@ -11,6 +11,8 @@ More details about the methodology can be found at:
 - Python 3.x
 - NumPy (core algorithms)
 - OpenStreetMap data
+- NetworkX
+- Matplotlib
 
 ## Getting started
 
@@ -31,6 +33,28 @@ More details about the methodology can be found at:
    The script generates a toy square city, adds a bus line and prints an example
    route demonstrating that, thanks to a fixed boarding cost (waiting + paying),
    taking the bus is noticeably cheaper than walking the same distance.
+
+## Graph visualization
+
+Generate a random graph, calculate a route, and visualize it:
+
+```python
+from src.scripts.utils.generators import generate_random_graph
+from src.scripts.utils.route_finder import dijkstra
+from src.scripts.utils.graph_visualizer import draw_graph
+
+graph = generate_random_graph(10)
+path = dijkstra(graph, 0, 5)
+draw_graph(graph, path)
+```
+
+You can also run the module directly:
+
+```bash
+python -m src.scripts.utils.graph_visualizer
+```
+
+Bus nodes (IDs ≥ 1000) are shown in orange, and the selected path is drawn in red.
 
 ## Authors
 
