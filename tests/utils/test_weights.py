@@ -1,12 +1,7 @@
 import logging
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
-
 from math import isclose
 
-from scripts.utils.weights import (
+from src.scripts.utils.weights import (
     get_connection_weight,
     haversine,
 )

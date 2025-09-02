@@ -67,10 +67,7 @@ pytest
 - Joaquin Gonzalez Budiño: <joa_gzb@hotmail.com>
 - Nicolas Giuliano: <nsgiuliano@gmail.com>
 
-## Social networking
-
 - [LinkedIn Joaquin](https://www.linkedin.com/in/joaquin-gonzalez-budino/)
-- [Joaquin's portfolio](https://joagzb.com)
 - [LinkedIn Nicolas](https://www.linkedin.com/in/nicolás-giuliano-204a301a4/)
 
 ## License
