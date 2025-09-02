@@ -5,6 +5,8 @@ They build a deterministic square grid and a single vertical bus line to
 validate routing algorithms.
 """
 
+from ..utils.graph_visualizer import draw_graph
+import copy
 from ..utils.weights import calculate_bus_time_travel_cost
 from ..utils.generators import merge_bus_and_map_graph
 from ..utils.route_finder import dijkstra
@@ -109,12 +111,45 @@ def _compute_route_cost(graph, path):
 
 if __name__ == "__main__":
     size = 10
-    fixed_weight = 0.1
+    fixed_weight = 1
+
     map_graph = generate_square_city_graph(size, fixed_weight)
     buses_graph = generate_bus_line_square_city(size, fixed_weight)
-    merged = merge_bus_and_map_graph(map_graph, buses_graph)
+    full_graph = merge_bus_and_map_graph(copy.deepcopy(map_graph), buses_graph)
 
-    route = dijkstra(merged, 5, 95)
-    print("Example route:", route)
-    print("Route cost:", _compute_route_cost(merged, route))
+    # Prompt user for start and end nodes
+    min_node, max_node = 0, size * size - 1
 
+    def _prompt_node(prompt_text: str, default: int) -> int:
+        while True:
+            raw = input(f"{prompt_text} [{default}] (min {min_node}, max {max_node}): ").strip()
+            if raw == "":
+                return default
+            try:
+                val = int(raw)
+                if min_node <= val <= max_node:
+                    return val
+                else:
+                    print(f"Please enter a value between {min_node} and {max_node}.")
+            except ValueError:
+                print("Please enter a valid integer.")
+
+    default_start, default_end = 3, 69
+    start_node = _prompt_node("Enter start node", default_start)
+    end_node = _prompt_node("Enter end node", default_end)
+
+    route_solution = dijkstra(full_graph, start_node, end_node)
+    route_solution_only_walking = dijkstra(map_graph, start_node, end_node)
+
+    draw_graph(full_graph, route_solution, save_path="toy_city_graph_solution.png")
+    draw_graph(map_graph, route_solution_only_walking, save_path="toy_city_graph_solution_walking.png")
+
+    print("Route solution:", route_solution)
+    print("Route cost:", _compute_route_cost(full_graph, route_solution))
+    print("Route solution (walking):", route_solution_only_walking)
+    print("Route cost (walking):", _compute_route_cost(map_graph, route_solution_only_walking))
+    
+    if route_solution_only_walking >= route_solution:
+        print("you'd better go by foot.")
+    else:
+        print("you'd better take the bus instead of walking.")

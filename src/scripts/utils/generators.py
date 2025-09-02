@@ -153,7 +153,7 @@ def merge_bus_and_map_graph(map_graph, buses_graph):
                 route_weight = get_connection_weight(map_graph, route[i], route[i + 1])
                 if route_weight is None:
                     continue
-                cost_get_on = calculate_bus_get_on_cost(route_weight)
+                cost_get_on = calculate_bus_get_on_cost()
                 map_graph["connections"][start_map_node].append(start_bus_node)
                 map_graph["weights"][start_map_node].append(cost_get_on)
 

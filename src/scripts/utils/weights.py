@@ -1,5 +1,12 @@
 import math
-from configuration.graph_settings import settings
+
+# Support both execution modes:
+# - tests add `src` to sys.path -> top-level package is `configuration`
+# - running as a package `python -m src...` -> package path is `src.configuration`
+try:  # preferred when `src` is top-level package
+    from src.configuration.graph_settings import settings  # type: ignore
+except ModuleNotFoundError:  # fallback when `src` is added to sys.path
+    from configuration.graph_settings import settings
 
 def get_connection_weight(graph, start_node, end_node):
     """
@@ -11,7 +18,7 @@ def get_connection_weight(graph, start_node, end_node):
     end_node (int): The ending node of the connection.
 
     Returns:
-    float or None: The weight of the connection if found, ``None`` otherwise.
+    float: The weight of the connection if found, None if not found.
     """
     try:
         weight_index = graph["connections"][start_node].index(end_node)
@@ -48,13 +55,14 @@ def haversine(lat1, lon1, lat2, lon2):
     distance = R * c
     return distance
 
-def calculate_bus_get_on_cost(route_weight):
-    return (
-        route_weight
-        * settings["wait_for_bus_cost"]
-        * settings["pay_for_bus_cost"]
-        * settings["bus_time_travel_cost"]
-    )
+def calculate_bus_get_on_cost():
+    """Return the cost incurred when boarding a bus.
+
+    The cost combines waiting for the bus and paying the fare. It is
+    independent of the route length and bus travel time, ensuring that
+    bus usage remains attractive compared to walking.
+    """
+    return settings["wait_for_bus_cost"] + settings["pay_for_bus_cost"]
 
 def calculate_bus_get_off_cost():
     return settings["bus_get_off"]
