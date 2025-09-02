@@ -20,8 +20,11 @@ def get_connection_weight(graph, start_node, end_node):
     Returns:
     float: The weight of the connection if found, None if not found.
     """
-    weight_index = graph['connections'][start_node].index(end_node)
-    return graph['weights'][start_node][weight_index]
+    try:
+        weight_index = graph["connections"][start_node].index(end_node)
+        return graph["weights"][start_node][weight_index]
+    except (KeyError, ValueError, IndexError):
+        return None
 
 def haversine(lat1, lon1, lat2, lon2):
     """

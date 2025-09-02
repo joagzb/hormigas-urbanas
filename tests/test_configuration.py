@@ -1,9 +1,5 @@
 import logging
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
-from configuration import algorithm_settings, graph_settings
+from src.configuration import algorithm_settings, graph_settings
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -60,4 +56,3 @@ def test_graph_settings_keys_and_values():
             assert 0 < value <= 1
         else:
             assert value > 0
-
