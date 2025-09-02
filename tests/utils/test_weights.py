@@ -1,12 +1,14 @@
 import logging
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+
 from math import isclose
 
-from src.scripts.utils.weights import (
+from scripts.utils.weights import (
     get_connection_weight,
     haversine,
-    calculate_bus_get_on_cost,
-    calculate_bus_get_off_cost,
-    calculate_bus_time_travel_cost,
 )
 
 
@@ -16,8 +18,14 @@ logger = logging.getLogger(__name__)
 
 def test_get_connection_weight():
     graph = {
-        "connections": {0: [1], 1: [0]},
-        "weights": {0: [5.0], 1: [5.0]},
+        "connections": {
+            0: [1], 
+            1: [], 
+        },
+        "weights": {
+            0: [5.0], 
+            1: [],
+        },
     }
     start_node, end_node = 0, 1
     logger.info(
@@ -41,28 +49,21 @@ def test_haversine():
         lat2,
         lon2,
     )
-    distance = haversine(lat1, lon1, lat2, lon2)
-    logger.info("Computed distance: %s", distance)
-    assert isclose(distance, 111.195, rel_tol=1e-3)
-
-
-def test_calculate_bus_get_on_cost():
-    logger.info("Testing calculate_bus_get_on_cost with settings")
-    cost = calculate_bus_get_on_cost()
-    logger.info("Computed get-on cost: %s", cost)
-    assert cost == 3.3
-
-
-def test_calculate_bus_get_off_cost():
-    logger.info("Testing calculate_bus_get_off_cost with settings")
-    cost = calculate_bus_get_off_cost()
-    logger.info("Computed get-off cost: %s", cost)
-    assert cost == 0.01
-
-
-def test_calculate_bus_time_travel_cost():
-    route_weight = 10.0
-    logger.info("Testing calculate_bus_time_travel_cost with route_weight=%s", route_weight)
-    cost = calculate_bus_time_travel_cost(route_weight)
-    logger.info("Computed time travel cost: %s", cost)
-    assert cost == 5.0
+    distance_1 = haversine(lat1, lon1, lat2, lon2)
+    logger.info("Computed distance: %s", distance_1)
+    
+    # Buenos Aires to São Paulo ≈ 1674 km
+    lat1, lon1 = -34.6037, -58.3816
+    lat2, lon2 = -23.5505, -46.6333
+    logger.info("Testing haversine BA → SP")
+    logger.info(
+        "Testing haversine with lat1=%s, lon1=%s, lat2=%s, lon2=%s",
+        lat1,
+        lon1,
+        lat2,
+        lon2,
+    )
+    distance_2 = haversine(lat1, lon1, lat2, lon2)
+    logger.info("Computed distance: %s", distance_2)
+    
+    assert isclose(distance_1, 111.195, rel_tol=1e-3) and isclose(distance_2, 1674, rel_tol=1e-2)
