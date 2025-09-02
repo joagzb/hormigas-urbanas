@@ -10,7 +10,6 @@ More details about the methodology can be found at:
 
 - Python 3.x
 - NumPy (core algorithms)
-- OpenStreetMap data
 - NetworkX
 - Matplotlib
 
@@ -19,25 +18,19 @@ More details about the methodology can be found at:
 1. **Create and activate a virtual environment**
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
+   source .venv/bin/activate  # On Windows use `source .venv/Scripts/activate` on a cmd or git bash terminal
    ```
 2. **Install dependencies**
    ```bash
    pip install -r src/requirements.txt
-   pip install pytest  # required for running the tests
    ```
-3. **Run the test suite**
+3. **Run a simple check**
+   The repository includes a quick example that can be executed as Python modules:
    ```bash
-   pytest
+   python -m src.scripts.examples.toy_city_generators
    ```
-4. **Run a simple check**
-   The repository includes small utilities that can be executed as Python modules. For example:
-   ```bash
-   python -m src.scripts.test.test_graph_generators
-   ```
-   The script generates a toy square city, adds a bus line and prints an example
-   route demonstrating that, thanks to a fixed boarding cost (waiting + paying),
-   taking the bus is noticeably cheaper than walking the same distance.
+   The script generates a toy square city (10x10), adds a bus line and prints an example
+   route demonstrating that.
 
 ## Graph visualization
 
@@ -53,20 +46,19 @@ path = dijkstra(graph, 0, 5)
 draw_graph(graph, path)
 ```
 
-You can also run the module directly:
-
-```bash
-python -m src.scripts.utils.graph_visualizer
-```
-
 Bus nodes (IDs ≥ 1000) are shown in orange, and the selected path is drawn in red.
 
 ## Running tests
 
-After installing the dependencies, you can run the test suite with [pytest](https://docs.pytest.org/en/stable/):
+After installing the dependencies, 
 
 ```bash
-python -m pip install pytest
+   pip install pytest  # required for running the tests
+   ```
+
+you can run the test suite with [pytest](https://docs.pytest.org/en/stable/) by directly running:
+
+```bash
 pytest
 ```
 

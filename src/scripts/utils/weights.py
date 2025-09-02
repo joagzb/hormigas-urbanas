@@ -1,5 +1,12 @@
 import math
-from ...configuration.graph_settings import settings
+
+# Support both execution modes:
+# - tests add `src` to sys.path -> top-level package is `configuration`
+# - running as a package `python -m src...` -> package path is `src.configuration`
+try:  # preferred when `src` is top-level package
+    from src.configuration.graph_settings import settings  # type: ignore
+except ModuleNotFoundError:  # fallback when `src` is added to sys.path
+    from configuration.graph_settings import settings
 
 def get_connection_weight(graph, start_node, end_node):
     """
@@ -11,7 +18,7 @@ def get_connection_weight(graph, start_node, end_node):
     end_node (int): The ending node of the connection.
 
     Returns:
-    float or None: The weight of the connection if found, None if not found.
+    float: The weight of the connection if found, None if not found.
     """
     weight_index = graph['connections'][start_node].index(end_node)
     return graph['weights'][start_node][weight_index]

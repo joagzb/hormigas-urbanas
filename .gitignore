@@ -22,3 +22,10 @@ env/
 .venv/
 venv
 env
+
+# editors
+.vscode
+.vscode/
+
+# generated images
+*.png
