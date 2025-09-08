@@ -41,17 +41,25 @@ def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_
         q = np.random.rand()
         if q <= q0:
             Z = (neighbors_pheromones ** heuristic_weight) * ((1.0 / neighbors_weights) ** pheromone_weight)
-            next_node = neighbors[np.argmax(Z)]
+            # Guard: if Z are non-finite or all-zero, fall back to cheapest neighbor
+            if not np.isfinite(Z).all() or np.all(Z == 0):
+                next_node = int(neighbors[np.argmin(neighbors_weights)])
+            else:
+                next_node = int(neighbors[np.argmax(Z)])
             solution_path.append(next_node)
         else:
             pheromone_values = neighbors_pheromones ** heuristic_weight
             heuristic_values = (1.0 / neighbors_weights) ** pheromone_weight
-            sum_values = np.sum(pheromone_values * heuristic_values)
-            probabilities = (pheromone_values * heuristic_values) / sum_values
-
-            # Select the next node based on the roulette wheel selection
-            next_node_index = roulette_wheel_selection(probabilities)
-            solution_path.append(neighbors[next_node_index-1])
+            combined = pheromone_values * heuristic_values
+            sum_values = np.sum(combined)
+            if sum_values <= 0 or not np.isfinite(sum_values):
+                next_node = int(neighbors[np.argmin(neighbors_weights)])
+                solution_path.append(next_node)
+            else:
+                probabilities = combined / sum_values
+                # Select the next node based on the roulette wheel selection
+                next_node_index = roulette_wheel_selection(probabilities)
+                solution_path.append(int(neighbors[next_node_index-1]))
 
     # return the path and calculate the incurred costs
     if solution_path[-1] != np.inf:

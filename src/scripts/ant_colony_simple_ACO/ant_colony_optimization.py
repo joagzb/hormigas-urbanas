@@ -1,10 +1,10 @@
 import numpy as np
 from time import time
 from collections import Counter
-from ..utils.generators import generate_pheromone_map
+from scripts.utils.generators import generate_pheromone_map
 from .ant_solution_ACO import ant_solution_ACO
 
-def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_pheromone_lvl, heuristic_weight, pheromone_weight):
+def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_pheromone_lvl, heuristic_weight, pheromone_weight, max_epochs: int = 500):
     """
     Performs Simple Ant Colony Optimization (ACO) to find the optimal path between start and end nodes in a graph.
 
@@ -59,7 +59,7 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
     counter = 0
 
     start_time = time()
-    while counter < ants_number:
+    while counter < ants_number and epochs < max_epochs:
         # Each ant makes its journey
         for ant in range(ants_number):
             path_found,path_distance = ant_solution_ACO(graph_map, pheromone_graph, start_node, end_node, heuristic_weight, pheromone_weight)
@@ -86,9 +86,18 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
 
         epochs += 1
 
-    # Return the optimal path
-    optimal_path = routes[0]
-    total_distance = distances[0]
+    # Return the optimal path (best among found)
+    finite_mask = distances != np.inf
+    if np.any(finite_mask):
+        best_idx = np.argmin(distances[finite_mask])
+        finite_indices = np.where(finite_mask)[0]
+        selected = finite_indices[best_idx]
+        optimal_path = routes[selected]
+        total_distance = distances[selected]
+    else:
+        optimal_path = routes[0]
+        total_distance = distances[0]
+        
     total_time = time() - start_time
 
     return optimal_path, total_distance, total_time, epochs

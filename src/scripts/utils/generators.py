@@ -10,11 +10,6 @@ from .route_finder import dijkstra
 def generate_random_graph(size, max_weight=100):
     """Generate a random graph with connections between nearby nodes.
 
-    The original implementation skipped nodes ``0`` and ``1`` when building
-    connections, which produced graphs with missing entries. This version
-    ensures that every node has an entry in the ``connections`` and ``weights``
-    dictionaries and limits neighbor lookups to valid node indices.
-
     Parameters
     ----------
     size: int
@@ -38,7 +33,9 @@ def generate_random_graph(size, max_weight=100):
         graph["connections"].append((current_node, []))
         graph["weights"].append((current_node, []))
 
-        for next_node in range(max(0, current_node - 2), min(size, current_node + 3)):
+        two_nodes_behind_index = max(0, current_node - 2)
+        two_nodes_ahead_index = min(size, current_node + 3)
+        for next_node in range(two_nodes_behind_index, two_nodes_ahead_index):
             if current_node == next_node:
                 continue
 
@@ -54,24 +51,37 @@ def generate_random_graph(size, max_weight=100):
 
 
 def generate_bus_graph(graph):
-    bus_routes = generate_bus_routes(graph)
+    """Generate a random bus graph over a given one.
+
+    Parameters
+    ----------
+    graph: Dict
+        Number of nodes in the graph.
+
+    Returns
+    -------
+    dict
+        Random bus graph dictionary with node indices, connections and weights.
+    """
+    
+    buses_routes = generate_bus_routes(graph)
     buses_graph = []
 
-    for route in bus_routes:
-        bus_node_index_offset = 1000 + (1000 * len(buses_graph))
+    for bus_route in buses_routes:
+        bus_node_index_offset = 1000 + (1000 * len(buses_graph)) # nodes 1,2,3 in the graph are represented as 1000,1001,1002 in bus graph respectively
 
         bus_dict = {
-            'name': route['name'],
+            'name': bus_route['name'],
             'stops': [],  # Connections between map nodes and bus nodes
-            'route': route['route'],
-            'node_bus_index': {node + bus_node_index_offset for node in route['route']},
+            'route': bus_route['route'],
+            'node_bus_index': {node + bus_node_index_offset for node in bus_route['route']},
             'connections': [],
             'weights': []
         }
 
-        for i in range(len(route["route"]) - 1):
-            current_node = route["route"][i]
-            next_node = route["route"][i + 1]
+        for i in range(len(bus_route["route"]) - 1):
+            current_node = bus_route["route"][i]
+            next_node = bus_route["route"][i + 1]
             bus_current_node = current_node + bus_node_index_offset
             bus_next_node = next_node + bus_node_index_offset
             original_weight = get_connection_weight(graph, current_node, next_node)
@@ -100,7 +110,7 @@ def generate_bus_graph(graph):
 
 def generate_bus_routes(graph):
     """
-    Adds bus routes to the graph.
+    generate a bus routes to the given graph.
 
     Parameters:
     graph (dict): The graph dictionary with node indices, connections, and weights.

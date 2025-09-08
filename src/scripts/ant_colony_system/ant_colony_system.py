@@ -2,16 +2,12 @@ import numpy as np
 from time import time
 from collections import Counter
 from .ant_solution_ACS import ant_solution_ACS
-from ..utils.generators import generate_pheromone_map
+from scripts.utils.generators import generate_pheromone_map
 
-def ACS(graph_map, start_node, end_node, ants_number, global_evap_rate, local_evap_rate, transition_prob, initial_pheromone_lvl, heuristic_weight, pheromone_weight):
+def ACS(graph_map, start_node, end_node, ants_number, global_evap_rate, local_evap_rate, transition_prob, initial_pheromone_lvl, heuristic_weight, pheromone_weight, max_epochs: int = 500):
     """
-    ANT COLONY SYSTEM. The ant system with elitism considers only a specific ant, the one that
-    generated the best global solution. This ant will be the one that deposits the most pheromone.
-    The other ants also apply a local update to the pheromone trails on their path, although much
-    smaller compared to the best ant. This approach offers a balance between exploration and
-    exploitation of accumulated knowledge. It is modified to explicitly allow exploration.
-    The rule used is called the pseudo-random proportional rule.
+    Executes the Ant Colony System (ACS) elitism that considers only the ant that
+    generated the best global solution, to find the best route between 2 nodes in a graph.
 
     Parameters:
     adj_matrix : numpy.ndarray
@@ -49,7 +45,7 @@ def ACS(graph_map, start_node, end_node, ants_number, global_evap_rate, local_ev
     counter = 0
 
     start_time = time()
-    while counter < ants_number:
+    while counter < ants_number and epochs < max_epochs:
         # Each ant makes its journey
         for ant in range(ants_number):
             path_found, path_distance  = ant_solution_ACS(graph_map, pheromone_graph, start_node, end_node, transition_prob, heuristic_weight, pheromone_weight)
@@ -83,8 +79,16 @@ def ACS(graph_map, start_node, end_node, ants_number, global_evap_rate, local_ev
 
         epochs += 1
 
-    optimal_path = routes[0]  # Optimal path sequence
-    total_distance = distances[0]  # Total distance of the optimal path
+    finite_mask = distances != np.inf
+    if np.any(finite_mask):
+        best_idx = np.argmin(distances[finite_mask])
+        finite_indices = np.where(finite_mask)[0]
+        selected = finite_indices[best_idx]
+        optimal_path = routes[selected]
+        total_distance = distances[selected]
+    else:
+        optimal_path = routes[0]
+        total_distance = distances[0]
     total_time = time() - start_time
 
     return optimal_path, total_distance, total_time, epochs

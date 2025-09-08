@@ -57,12 +57,21 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_
         # Calculate probabilities for moving to the next node
         pheromone_values = neighbors_pheromones ** heuristic_weight
         heuristic_values = (1.0 / neighbors_weights) ** pheromone_weight
-        sum_values = np.sum(pheromone_values * heuristic_values)
-        probabilities = (pheromone_values * heuristic_values) / sum_values
+        combined = pheromone_values * heuristic_values
+        sum_values = np.sum(combined)
 
-        # Select the next node based on the roulette wheel selection
+        # guard against numerical issues (e.g., all zeros)
+        if sum_values <= 0 or not np.isfinite(sum_values):
+            # Fallback to greedy by cost
+            next_node = int(neighbors[np.argmin(neighbors_weights)])
+            solution_path.append(next_node)
+            continue
+
+        probabilities = combined / sum_values
+
+        # select the next node based on the roulette wheel selection
         next_node_index = roulette_wheel_selection(probabilities)
-        solution_path.append(neighbors[next_node_index-1])
+        solution_path.append(int(neighbors[next_node_index-1]))
 
     if solution_path[-1] != np.inf:  # If the ant is not lost, return the path and calculate the total cost
         for i in range(len(solution_path) - 1):
