@@ -47,7 +47,7 @@ def haversine(lat1, lon1, lat2, lon2):
     delta_latitude = math.radians(lat2 - lat1)
     delta_longitude = math.radians(lon2 - lon1)
 
-    # Haversine formula
+    # calculate the distance
     a = (math.sin(delta_latitude / 2) ** 2 +
          math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_longitude / 2) ** 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
@@ -59,8 +59,7 @@ def calculate_bus_get_on_cost():
     """Return the cost incurred when boarding a bus.
 
     The cost combines waiting for the bus and paying the fare. It is
-    independent of the route length and bus travel time, ensuring that
-    bus usage remains attractive compared to walking.
+    independent of the route length and bus travel time.
     """
     return settings["wait_for_bus_cost"] + settings["pay_for_bus_cost"]
 
