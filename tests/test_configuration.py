@@ -40,8 +40,6 @@ def test_algorithm_settings_keys_and_values():
 
 def test_graph_settings_keys_and_values():
     expected_keys = {
-        "init_node",
-        "final_node",
         "wait_for_bus_cost",
         "pay_for_bus_cost",
         "bus_time_travel_cost",
