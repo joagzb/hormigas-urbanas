@@ -1,5 +1,6 @@
 import numpy as np
 from ..utils.roulette_selection import roulette_wheel_selection
+from ..utils.heuristic_weights import normalize_for_selection
 
 def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, heuristic_weight:float, pheromone_weight:float):
     """
@@ -56,7 +57,8 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_
 
         # Calculate probabilities for moving to the next node
         pheromone_values = neighbors_pheromones ** heuristic_weight
-        heuristic_values = (1.0 / neighbors_weights) ** pheromone_weight
+        effective_weights = normalize_for_selection(neighbors_weights)
+        heuristic_values = (1.0 / effective_weights) ** pheromone_weight
         combined = pheromone_values * heuristic_values
         sum_values = np.sum(combined)
 

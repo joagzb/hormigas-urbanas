@@ -1,5 +1,6 @@
 import numpy as np
 from ..utils.roulette_selection import roulette_wheel_selection
+from ..utils.heuristic_weights import normalize_for_selection
 
 def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, q0: float, heuristic_weight:float, pheromone_weight:float):
     """
@@ -40,7 +41,8 @@ def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_
         # Probabilistic choice of the next node (proposed by Ant Colony System ACS)
         q = np.random.rand()
         if q <= q0:
-            Z = (neighbors_pheromones ** heuristic_weight) * ((1.0 / neighbors_weights) ** pheromone_weight)
+            effective_weights = normalize_for_selection(neighbors_weights)
+            Z = (neighbors_pheromones ** heuristic_weight) * ((1.0 / effective_weights) ** pheromone_weight)
             # Guard: if Z are non-finite or all-zero, fall back to cheapest neighbor
             if not np.isfinite(Z).all() or np.all(Z == 0):
                 next_node = int(neighbors[np.argmin(neighbors_weights)])
@@ -49,7 +51,8 @@ def ant_solution_ACS(graph_map: dict, pheromone_graph:dict, start_node:int, end_
             solution_path.append(next_node)
         else:
             pheromone_values = neighbors_pheromones ** heuristic_weight
-            heuristic_values = (1.0 / neighbors_weights) ** pheromone_weight
+            effective_weights = normalize_for_selection(neighbors_weights)
+            heuristic_values = (1.0 / effective_weights) ** pheromone_weight
             combined = pheromone_values * heuristic_values
             sum_values = np.sum(combined)
             if sum_values <= 0 or not np.isfinite(sum_values):

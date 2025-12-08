@@ -1,14 +1,14 @@
 settings = {
-  "ants": 30,
+  "ants": 50,
   "f_ini": 0.2,  # initial level of pheromone
   "f_max": 0.9,  # max level of pheromone allowed for each edge (Max-Min ant)
-  "f_min": 0.1, # min level of pheromone allowed for each edge (Best-worst ant and Max-Min ant)
-  "evaporation_rate": 0.5,  # (p) pheromone evaporation level
+  "f_min": 0.01, # min level of pheromone allowed for each edge (Best-worst ant and Max-Min ant)
+  "evaporation_rate": 0.1,  # (p) pheromone evaporation level - lowered to improve memory retention
   "epomax": 500,
-  "local_evaporation_rate": 0.4,  # rho
+  "local_evaporation_rate": 0.1,  # rho - lowered to be consistent
   "transition_probability": 0.2,  # q0
-  "alfa": 0.6,  # heuristic_weight (exponent on pheromone)
-  "beta": 0.6,  # pheromone_weight (exponent on 1/cost)
+  "alfa": 1.0,  # heuristic_weight (exponent on pheromone) - increased slightly to rely more on history
+  "beta": 0.5,  # pheromone_weight (exponent on 1/cost) - decreased to reduce greediness against bus entry
 }
 
 presets = {

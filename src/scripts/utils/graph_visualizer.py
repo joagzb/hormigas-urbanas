@@ -26,7 +26,7 @@ def build_graph_from_dict(graph_dict: dict) -> nx.DiGraph:
 def _grid_positions(graph_dict: dict, graph_nx: nx.DiGraph) -> Optional[Dict[int, Tuple[float, float]]]:
     """Return a grid layout when base nodes are 0..n*n-1; otherwise None.
 
-    Base map nodes are treated as integers < 1000. Bus nodes are >= 1000 and
+    Base map nodes are treated as integers < 100000. Bus nodes are >= 100000 and
     are placed with a small offset next to their base node.
     """
     try:
@@ -40,7 +40,7 @@ def _grid_positions(graph_dict: dict, graph_nx: nx.DiGraph) -> Optional[Dict[int
         # Build base_nodes with a standard loop for clarity
         base_nodes: List[int] = []
         for n in nodes_sorted:
-            if isinstance(n, int) and n < 1000:
+            if isinstance(n, int) and n < 100000:
                 base_nodes.append(n)
         if not base_nodes:
             return None
@@ -62,10 +62,10 @@ def _grid_positions(graph_dict: dict, graph_nx: nx.DiGraph) -> Optional[Dict[int
         # Place bus nodes slightly offset from their base station
         bus_nodes: List[int] = []
         for n in nodes_sorted:
-            if isinstance(n, int) and n >= 1000:
+            if isinstance(n, int) and n >= 100000:
                 bus_nodes.append(n)
         for n in bus_nodes:
-            base = n - 1000
+            base = n - 100000
             if base in positions:
                 x, y = positions[base]
                 positions[n] = (x + 0.25, y)
@@ -87,8 +87,8 @@ def node_style(graph_nx: nx.DiGraph, base_size: int = 300, bus_size: int = 450) 
 
     Sizes are provided by caller to allow adaptive scaling.
     """
-    colors = ["orange" if n >= 1000 else "lightblue" for n in graph_nx.nodes]
-    sizes = [bus_size if n >= 1000 else base_size for n in graph_nx.nodes]
+    colors = ["orange" if n >= 100000 else "lightblue" for n in graph_nx.nodes]
+    sizes = [bus_size if n >= 100000 else base_size for n in graph_nx.nodes]
     return colors, sizes
 
 
@@ -159,7 +159,7 @@ def draw_graph(graph: dict, path: Optional[List[int]] = None, save_path: Optiona
     # Estimate grid side length using an explicit loop (avoid generator one-liner)
     base_count = 0
     for n in graph_nx.nodes:
-        if isinstance(n, int) and n < 1000:
+        if isinstance(n, int) and n < 100000:
             base_count += 1
     side_guess = int(math.sqrt(max(1, base_count)))
 

@@ -68,7 +68,7 @@ def generate_bus_line_square_city(size, fixed_weight):
     Returns:
         list: A list containing the bus line graph.
     """
-    bus_node_index_offset = 1000
+    bus_node_index_offset = 100000
     distance = calculate_bus_time_travel_cost(fixed_weight)
 
     route = list(range(5, size * size, size))

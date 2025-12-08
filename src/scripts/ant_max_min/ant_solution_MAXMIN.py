@@ -1,5 +1,6 @@
 import numpy as np
 from ..utils.roulette_selection import roulette_wheel_selection
+from ..utils.heuristic_weights import normalize_for_selection
 
 def ant_solution_MAXMIN(graph_map, pheromone_graph, start_node, end_node, q0, alpha, beta):
     """
@@ -43,8 +44,9 @@ def ant_solution_MAXMIN(graph_map, pheromone_graph, start_node, end_node, q0, al
             
         # Calculate attractiveness
         # Avoid division by zero in heuristic
+        effective_weights = normalize_for_selection(valid_weights)
         with np.errstate(divide='ignore'):
-                heuristic = (1.0 / valid_weights) ** beta
+                heuristic = (1.0 / effective_weights) ** beta
         
         attractiveness = (valid_pheromones ** alpha) * heuristic
         
