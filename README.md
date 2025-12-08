@@ -37,11 +37,9 @@ More details about the methodology can be found at:
 Generate a random graph, calculate a route, and visualize it:
 
 ```python
-from src.scripts.utils.generators import generate_random_graph
 from src.scripts.utils.route_finder import dijkstra
 from src.scripts.utils.graph_visualizer import draw_graph
 
-graph = generate_random_graph(10)
 path = dijkstra(graph, 0, 5)
 draw_graph(graph, path)
 ```

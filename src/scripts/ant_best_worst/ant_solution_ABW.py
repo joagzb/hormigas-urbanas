@@ -49,13 +49,20 @@ def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: 
         # Calculate the selection probabilities for each neighboring node
         pheromone_values = neighbors_pheromones ** pheromone_weight
         heuristic_values = (1.0 / neighbors_weights) ** heuristic_weight
-        sum_values = np.sum(pheromone_values * heuristic_values)
-        probabilities = (pheromone_values * heuristic_values) / sum_values
+        combined = pheromone_values * heuristic_values
+        sum_values = np.sum(combined)
+
+        # Guard against degenerate probabilities
+        if sum_values <= 0 or not np.isfinite(sum_values):
+            next_node = int(neighbors[np.argmin(neighbors_weights)])
+            solution_path.append(next_node)
+            continue
+
+        probabilities = combined / sum_values
 
         # Select the next node using roulette wheel selection
-        # Note: roulette_wheel_selection returns 1-indexed values
         next_node_index = roulette_wheel_selection(probabilities)
-        solution_path.append(neighbors[next_node_index - 1])
+        solution_path.append(int(neighbors[next_node_index-1]))
 
     # Calculate the cost of the found path
     if solution_path[-1] != np.inf:
@@ -66,4 +73,3 @@ def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: 
         solution_cost = np.inf
 
     return solution_path, solution_cost
-

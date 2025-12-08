@@ -72,7 +72,9 @@ def generate_bus_line_square_city(size, fixed_weight):
     distance = calculate_bus_time_travel_cost(fixed_weight)
 
     route = list(range(5, size * size, size))
-    node_bus_index = {node + bus_node_index_offset for node in route}
+    node_bus_index = set()
+    for node in route:
+        node_bus_index.add(node + bus_node_index_offset)
 
     bus_dict = {
         "name": "bus line UNIQUE",
