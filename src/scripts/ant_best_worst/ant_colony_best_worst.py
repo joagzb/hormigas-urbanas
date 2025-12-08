@@ -47,6 +47,11 @@ def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epoc
 
     epochs = 0
     same_path_solution_counter = 0
+    most_common_distance = float('inf')
+
+    global_best_path = None
+    restarts = 0
+    max_restarts = 3
 
     start_time = time()
     while same_path_solution_counter < ants_number:
@@ -74,47 +79,70 @@ def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epoc
                 indx_next_node = graph_map["connections"][current_path_node].index(next_path_node)
                 pheromone_graph[current_path_node][indx_next_node] += 1 / distances[best_ant]
                 best_ant_pheromone_trail.append(pheromone_graph[current_path_node][indx_next_node])
-
-            global_best_cost = distances[best_ant]
+            
+            # Update global best
+            if distances[best_ant] < global_best_cost:
+                global_best_cost = distances[best_ant]
+                global_best_path = list(routes[best_ant])
+                
             threshold = np.mean(best_ant_pheromone_trail)
+        else:
+            threshold = 0
 
         # Evaporate pheromone on the worst ant's path
-        for i in range(len(routes[worst_ant]) - 2):
+        for i in range(len(routes[worst_ant]) - 1):
             current_path_node = routes[worst_ant][i]
             next_path_node = routes[worst_ant][i + 1]
+            
+            if next_path_node == float('inf'):
+                break
+                
             indx_next_node = graph_map["connections"][current_path_node].index(next_path_node)
             if not (current_path_node in routes[best_ant] and next_path_node in routes[best_ant]):
                 pheromone_graph[current_path_node][indx_next_node] *= (1 - global_evap_rate)
 
         # Perform pheromone trail mutation
-        mutation = ((epochs - epoch_before_restart) / (max_epochs - epoch_before_restart)) * np.random.rand() * threshold
-        for trail in pheromone_graph.keys():
-            if np.random.rand() < 0.5:
-                pheromone_graph[trail] += mutation
-            else:
-                pheromone_graph[trail] -= mutation
-                trail_values = pheromone_graph[trail]
-                trail_values[trail_values < min_pheromone_lvl] = min_pheromone_lvl
-                pheromone_graph[trail] = trail_values
+        if threshold > 0:
+            mutation = ((epochs - epoch_before_restart) / (max_epochs - epoch_before_restart)) * np.random.rand() * threshold
+            for trail in pheromone_graph.keys():
+                if np.random.rand() < 0.5:
+                    pheromone_graph[trail] += mutation
+                else:
+                    pheromone_graph[trail] -= mutation
+                    trail_values = pheromone_graph[trail]
+                    trail_values[trail_values < min_pheromone_lvl] = min_pheromone_lvl
+                    pheromone_graph[trail] = trail_values
 
         # Check termination criteria
         number_of_solutions = distances[distances != np.inf].size
         if number_of_solutions > 0:
             most_common_distance, same_path_solution_counter = Counter(distances[distances != np.inf]).most_common(1)[0]
 
-        if most_common_distance != global_best_cost:
+        # Increment stagnation when no improvement is made
+        if most_common_distance == global_best_cost:
             stagnant_count += 1
+        else:
+            stagnant_count = 0  # Reset when improvement is made
 
         if stagnant_count == max_stagnant_count or epochs == max_epochs:
+            restarts += 1
+            if restarts >= max_restarts:
+                break
+                
             epoch_before_restart = epochs
             stagnant_count = 0
-            max_epochs = max_epochs**2
+            max_epochs = max_epochs * 2  # Linear growth instead of exponential
             pheromone_graph = generate_pheromone_map(graph_map, initial_pheromone_lvl)
 
         epochs += 1
 
-    optimal_path = routes[0]  # Optimal path sequence
-    total_distance = distances[0]  # Total distance of the optimal path
+    if global_best_path is None:
+        optimal_path = routes[0] # Fallback
+        total_distance = distances[0]
+    else:
+        optimal_path = global_best_path  # Optimal path sequence
+        total_distance = global_best_cost  # Total distance of the optimal path
+        
     total_time = time() - start_time
 
     return optimal_path, total_distance, total_time, epochs

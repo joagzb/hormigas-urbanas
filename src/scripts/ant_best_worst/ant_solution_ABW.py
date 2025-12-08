@@ -53,8 +53,9 @@ def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: 
         probabilities = (pheromone_values * heuristic_values) / sum_values
 
         # Select the next node using roulette wheel selection
+        # Note: roulette_wheel_selection returns 1-indexed values
         next_node_index = roulette_wheel_selection(probabilities)
-        solution_path.append(neighbors[next_node_index-1])
+        solution_path.append(neighbors[next_node_index - 1])
 
     # Calculate the cost of the found path
     if solution_path[-1] != np.inf:

@@ -10,6 +10,23 @@ from src.scripts.utils.weights import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def test_missing_edge_returns_none():
+    graph = {
+        "connections": {0: [1]},
+        "weights": {0: [1.0]},
+    }
+
+    result = get_connection_weight(graph, 0, 2)
+    assert result is None
+
+def test_missing_start_node_returns_none():
+    graph = {
+        "connections": {0: [1]},
+        "weights": {0: [1.0]},
+    }
+
+    result = get_connection_weight(graph, 3, 1)
+    assert result is None
 
 def test_get_connection_weight():
     graph = {

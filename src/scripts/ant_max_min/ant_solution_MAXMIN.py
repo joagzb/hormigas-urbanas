@@ -18,8 +18,8 @@ def ant_solution_MAXMIN(adj_matrix, pheromone_matrix, start_node, end_node, q0, 
     """
     path = [start_node]
 
-    while path[0] != end_node:
-        current_node = path[0]
+    while path[-1] != end_node:
+        current_node = path[-1]
         neighbors = np.where(adj_matrix[current_node, :] != 0)[0]  # Find neighboring nodes
         neighbors = neighbors[~np.isin(neighbors, path)]  # Do not choose nodes that have already been visited
 
@@ -33,18 +33,18 @@ def ant_solution_MAXMIN(adj_matrix, pheromone_matrix, start_node, end_node, q0, 
         if q <= q0:
             attractiveness = (pheromone_matrix[current_node, neighbors] ** alpha) * ((1.0 / adj_matrix[current_node, neighbors]) ** beta)
             next_node = neighbors[np.argmax(attractiveness)]
-            path.insert(0, next_node)
+            path.append(next_node)
         else:
             total_attractiveness = np.sum((pheromone_matrix[current_node, neighbors] ** alpha) * ((1.0 / adj_matrix[current_node, neighbors]) ** beta))
             probabilities = ((pheromone_matrix[current_node, neighbors] ** alpha) * ((1.0 / adj_matrix[current_node, neighbors]) ** beta)) / total_attractiveness
-            next_node = neighbors[roulette_wheel_selection(probabilities)]
-            path.insert(0, next_node)
+            next_node = neighbors[roulette_wheel_selection(probabilities) - 1]
+            path.append(next_node)
 
     # return the path and calculate the total cost incurred
     if path[-1] != float('inf'):
         total_cost = 0
         for i in range(len(path) - 1):
-            total_cost += adj_matrix[path[i+1], path[i]]
+            total_cost += adj_matrix[path[i], path[i+1]]
         path.append(total_cost)
 
     return path
