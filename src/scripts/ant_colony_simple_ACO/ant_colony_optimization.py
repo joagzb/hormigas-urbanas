@@ -50,15 +50,15 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
     epochs : int
         The number of epochs (iterations) the algorithm ran before converging to a solution.
     """
-
-    pheromone_graph = generate_pheromone_map(graph_map,initial_pheromone_lvl)
-    routes = [None] * ants_number  # Paths taken by each ant
+    start_time = time()
+    
+    pheromone_graph = generate_pheromone_map(graph_map, initial_pheromone_lvl)
+    routes = [None] * ants_number
     distances = np.zeros(ants_number)
 
     epochs = 0
     counter = 0
-
-    start_time = time()
+    
     while counter < ants_number and epochs < max_epochs:
         # Each ant makes its journey
         for ant in range(ants_number):
@@ -79,14 +79,14 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
                     indx_next_node = graph_map["connections"][current_route_node].index(next_route_node)
                     pheromone_graph[current_route_node][indx_next_node] += 1 / distances[ant]
 
-        # Analyze algorithm termination criteria
-        number_of_solutions = distances[distances != np.inf].size  # Paths of lost ants don't count
+        # Check termination criteria
+        number_of_solutions = distances[distances != np.inf].size
         if number_of_solutions > 0:
             _, counter = Counter(distances[distances != np.inf]).most_common(1)[0]
 
         epochs += 1
-
-    # Return the optimal path (best among found)
+    
+    # Return the optimal path
     finite_mask = distances != np.inf
     if np.any(finite_mask):
         best_idx = np.argmin(distances[finite_mask])
@@ -97,7 +97,7 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
     else:
         optimal_path = routes[0]
         total_distance = distances[0]
-        
+    
     total_time = time() - start_time
 
     return optimal_path, total_distance, total_time, epochs

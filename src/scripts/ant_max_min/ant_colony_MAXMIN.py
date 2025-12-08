@@ -24,10 +24,7 @@ def ACS_MAXMIN(graph_map, start_node, end_node, num_ants, evaporation_rate, tran
     alpha and beta: Parameters to weigh the importance of heuristic and pheromone values
 
     Returns:
-    path: Optimal path (list of original node IDs) found by the algorithm
-    costo_MejorGlobal: Total distance of the optimal path
-    t: Time taken by the algorithm to complete
-    epocas: Number of epochs executed
+    total_epochs: Number of epochs executed
     """
     tic = time()
 
@@ -37,12 +34,12 @@ def ACS_MAXMIN(graph_map, start_node, end_node, num_ants, evaporation_rate, tran
 
     epochs = 0
     number_ants_following_path = 0
+    
     while number_ants_following_path < num_ants and epochs < max_epochs:
-
         # Each ant performs its tour
         for ant_idx in range(num_ants):
             ant_paths[ant_idx] = ant_solution_MAXMIN(graph_map, pheromone_graph, start_node, end_node, transition_probability, alpha, beta)
-            ant_distances[ant_idx] = ant_paths[ant_idx][-1]  # Last element is total distance
+            ant_distances[ant_idx] = ant_paths[ant_idx][-1]
 
         # Global pheromone evaporation
         for node in pheromone_graph:
@@ -52,7 +49,7 @@ def ACS_MAXMIN(graph_map, start_node, end_node, num_ants, evaporation_rate, tran
         sorted_indices = np.argsort(ant_distances)
         best_idx = sorted_indices[0]
 
-        # Deposit pheromone on the best ant path only (MMAS style)
+        # Deposit pheromone on the best ant path only
         if ant_paths[best_idx][-1] != float('inf'):
             best_cost = ant_paths[best_idx][-1]
             for i in range(len(ant_paths[best_idx]) - 2):
@@ -67,7 +64,7 @@ def ACS_MAXMIN(graph_map, start_node, end_node, num_ants, evaporation_rate, tran
         for node in pheromone_graph:
             pheromone_graph[node] = np.clip(pheromone_graph[node], f_min, f_max)
 
-        # Check stopping criterion of the algorithm
+        # Check stopping criterion
         finite = ant_distances[ant_distances != float('inf')]
         if finite.size > 0:
             most_common_distance = mode(finite)
@@ -75,17 +72,17 @@ def ACS_MAXMIN(graph_map, start_node, end_node, num_ants, evaporation_rate, tran
 
         epochs += 1
 
-    # best finite path
+    # Return best finite path
     finite_mask = ant_distances != float('inf')
     if np.any(finite_mask):
         best_idx = np.argmin(ant_distances[finite_mask])
         finite_indices = np.where(finite_mask)[0]
         sel = finite_indices[best_idx]
         path = ant_paths[sel][:-1]
-        costo_MejorGlobal = ant_paths[sel][-1]
+        cost = ant_paths[sel][-1]
     else:
         path = ant_paths[0][:-1]
-        costo_MejorGlobal = ant_paths[0][-1]
+        cost = ant_paths[0][-1]
 
     t = time() - tic
-    return path, costo_MejorGlobal, t, epochs
+    return path, cost, t, epochs

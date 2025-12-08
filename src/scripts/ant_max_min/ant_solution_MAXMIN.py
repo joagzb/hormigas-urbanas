@@ -1,13 +1,13 @@
 import numpy as np
 from ..utils.roulette_selection import roulette_wheel_selection
 
-def ant_solution_MAXMIN(adj_matrix, pheromone_matrix, start_node, end_node, q0, alpha, beta):
+def ant_solution_MAXMIN(graph_map, pheromone_graph, start_node, end_node, q0, alpha, beta):
     """
     Finds a solution path for an ant using the MAX-MIN Ant System.
 
     Parameters:
-    adj_matrix: Adjacency matrix where each arc (row i, column j) has the cost
-    pheromone_matrix: Pheromone matrix for each edge
+    graph_map: Dictionary graph with keys "connections" and "weights"
+    pheromone_graph: Pheromone dictionary for each node
     start_node: Root node (ant nest)
     end_node: Destination node (food)
     q0: Random state transition parameter between [0,1]
@@ -17,34 +17,70 @@ def ant_solution_MAXMIN(adj_matrix, pheromone_matrix, start_node, end_node, q0, 
     path: Solution (path) found by the ant, including total cost at the end
     """
     path = [start_node]
+    current_cost = 0
 
     while path[-1] != end_node:
         current_node = path[-1]
-        neighbors = np.where(adj_matrix[current_node, :] != 0)[0]  # Find neighboring nodes
-        neighbors = neighbors[~np.isin(neighbors, path)]  # Do not choose nodes that have already been visited
-
-        # The ant got lost. Stop the search
+        
+        # Get neighbors, weights, and pheromones
+        neighbors = np.array(graph_map["connections"].get(current_node, []))
+        weights = np.array(graph_map["weights"].get(current_node, []))
+        pheromones = np.array(pheromone_graph.get(current_node, []))
+        
         if neighbors.size == 0:
             path.append(float('inf'))
             break
-
-        # Probabilistic choice of the next node (proposed by Ant Colony System ACS)
-        q = np.random.rand()
-        if q <= q0:
-            attractiveness = (pheromone_matrix[current_node, neighbors] ** alpha) * ((1.0 / adj_matrix[current_node, neighbors]) ** beta)
-            next_node = neighbors[np.argmax(attractiveness)]
-            path.append(next_node)
+            
+        # Filter out visited nodes
+        visited_mask = ~np.isin(neighbors, path)
+        valid_neighbors = neighbors[visited_mask]
+        valid_weights = weights[visited_mask]
+        valid_pheromones = pheromones[visited_mask]
+        
+        if valid_neighbors.size == 0:
+            path.append(float('inf'))
+            break
+            
+        # Calculate attractiveness
+        # Avoid division by zero in heuristic
+        with np.errstate(divide='ignore'):
+                heuristic = (1.0 / valid_weights) ** beta
+        
+        attractiveness = (valid_pheromones ** alpha) * heuristic
+        
+        # Probabilistic choice (MMAS rule)
+        if np.random.rand() <= q0:
+            # Exploitation: best neighbor
+            best_idx = np.argmax(attractiveness)
+            next_node = valid_neighbors[best_idx]
         else:
-            total_attractiveness = np.sum((pheromone_matrix[current_node, neighbors] ** alpha) * ((1.0 / adj_matrix[current_node, neighbors]) ** beta))
-            probabilities = ((pheromone_matrix[current_node, neighbors] ** alpha) * ((1.0 / adj_matrix[current_node, neighbors]) ** beta)) / total_attractiveness
-            next_node = neighbors[roulette_wheel_selection(probabilities) - 1]
-            path.append(next_node)
+            # Exploration: roulette wheel selection
+            total_attractiveness = np.sum(attractiveness)
+            if total_attractiveness == 0:
+                    probabilities = np.ones_like(attractiveness) / len(attractiveness)
+            else:
+                    probabilities = attractiveness / total_attractiveness
+            
+            # roulette_wheel_selection returns 1-based index
+            selected_idx = roulette_wheel_selection(probabilities) - 1
+            next_node = valid_neighbors[selected_idx]
 
-    # return the path and calculate the total cost incurred
+        path.append(next_node)
+
+    # Calculate total cost
     if path[-1] != float('inf'):
         total_cost = 0
         for i in range(len(path) - 1):
-            total_cost += adj_matrix[path[i], path[i+1]]
+            u = path[i]
+            v = path[i+1]
+            # Find index of v in u's connections
+            try:
+                idx = graph_map["connections"][u].index(v)
+                total_cost += graph_map["weights"][u][idx]
+            except (ValueError, IndexError):
+                path[-1] = float('inf') # Mark as invalid if edge not found
+                return path
+                
         path.append(total_cost)
 
     return path

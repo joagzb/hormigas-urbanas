@@ -36,20 +36,21 @@ def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epoc
     - If the best solution stagnates for a number of epochs, the pheromone levels are reset, and the optimization continues.
     """
 
+    start_time = time()
+    
     pheromone_graph = generate_pheromone_map(graph_map, initial_pheromone_lvl)
-    routes = [None] * ants_number  # Paths taken by each ant
-    distances = np.zeros(ants_number)  # Distances of the paths found by each ant
+    routes = [None] * ants_number
+    distances = np.zeros(ants_number)
 
-    epoch_before_restart = 0  # Used for pheromone mutation calculation
-    stagnant_count = 0  # Counter for epochs where the best solution remains unchanged
-    max_stagnant_count = 8  # Threshold for stagnation before pheromone reset
-    global_best_cost = np.inf  # Initial global best cost set to infinity
-    min_pheromone_lvl = settings['f_min']  # Minimum pheromone level allowed on trails
-
+    epoch_before_restart = 0
+    stagnant_count = 0
+    max_stagnant_count = 8
+    global_best_cost = np.inf
+    min_pheromone_lvl = settings['f_min']
+    
     epochs = 0
     same_path_solution_counter = 0
-
-    start_time = time()
+    
     while same_path_solution_counter < ants_number and epochs < max_epochs:
         # Each ant finds a path
         for ant in range(ants_number):
@@ -132,6 +133,9 @@ def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epoc
 
         if (most_common_distance is not None) and (most_common_distance != global_best_cost):
             stagnant_count += 1
+        else:
+            # Reset stagnation count if we are on the right track or improved
+            stagnant_count = 0
 
         if stagnant_count == max_stagnant_count:
             epoch_before_restart = epochs
@@ -140,7 +144,7 @@ def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epoc
 
         epochs += 1
 
-    # Select best finite route if available
+    # Select best solution
     finite_mask = distances != np.inf
     if np.any(finite_mask):
         best_idx = np.argmin(distances[finite_mask])
@@ -151,6 +155,7 @@ def ABW(graph_map, start_node, end_node, ants_number, global_evap_rate, max_epoc
     else:
         optimal_path = routes[0]
         total_distance = distances[0]
+    
     total_time = time() - start_time
 
     return optimal_path, total_distance, total_time, epochs
