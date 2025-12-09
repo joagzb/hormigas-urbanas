@@ -48,9 +48,9 @@ def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: 
             break
 
         # Calculate the selection probabilities for each neighboring node
-        pheromone_values = neighbors_pheromones ** pheromone_weight
+        pheromone_values = neighbors_pheromones ** heuristic_weight
         effective_weights = normalize_for_selection(neighbors_weights)
-        heuristic_values = (1.0 / effective_weights) ** heuristic_weight
+        heuristic_values = (1.0 / effective_weights) ** pheromone_weight
         combined = pheromone_values * heuristic_values
         sum_values = np.sum(combined)
 
