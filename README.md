@@ -3,7 +3,6 @@
 An optimal route-finding algorithm between two points in a city, minimizing both time and cost while considering urban public buses. The algorithm has been built following Ant Colony Optimization (ACO) methodology.
 
 More details about the methodology can be found at:
-- [Paper work](./docs/hormigas%20urbanas%20-%202018.pdf)
 - [Joaquin's portfolio](https://joagzb.com)
 
 ## Technologies and libraries
