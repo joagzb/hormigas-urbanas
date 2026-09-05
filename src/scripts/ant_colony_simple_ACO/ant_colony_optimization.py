@@ -1,103 +1,124 @@
-import numpy as np
-from time import time
 from collections import Counter
-from scripts.utils.generators import generate_pheromone_map
+from time import time
+
+import numpy as np
+
+from ..utils.generators import deterministic_route_cost, generate_pheromone_map, validate_graph
 from .ant_solution_ACO import ant_solution_ACO
 
-def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_pheromone_lvl, heuristic_weight, pheromone_weight, max_epochs: int = 500):
-    """
-    Performs Simple Ant Colony Optimization (ACO) to find the optimal path between start and end nodes in a graph.
+
+def ACO(
+    graph_map,
+    start_node,
+    end_node,
+    ants_number,
+    evaporation_rate,
+    initial_pheromone_lvl,
+    heuristic_weight,
+    pheromone_weight,
+    max_epochs: int = 500,
+):
+    """Find the best route seen by the Ant Colony Optimization algorithm.
 
     Parameters:
     -----------
     graph_map : dict
-        A dictionary representing the graph structure, where:
-        - "connections": A dict with keys as nodes and values as lists of neighboring nodes.
-        - "weights": A dict with keys as nodes and values as lists of corresponding edge weights to neighboring nodes.
-
-    start_node : int
-        The starting node (ant hill) where all ants begin their journey.
-
-    end_node : int
-        The destination node (food) where all ants are trying to reach.
-
+        Graph containing aligned ``connections`` and ``weights`` mappings and a
+        ``node_index`` collection.
+    start_node : hashable
+        The opaque starting node ID (ant hill).
+    end_node : hashable
+        The opaque destination node ID (food).
     ants_number : int
-        The number of ants used in the simulation.
-
+        The number of ants used in each epoch.
     evaporation_rate : float
-        The rate at which pheromone evaporates after each epoch, must be in the range [0, 1].
-
-    initial_pheromone_lvl : float
-        The initial level of pheromone on all paths, used to initialize the pheromone graph.
-
+        The pheromone evaporation rate applied after each epoch.
+    initial_pheromone_lvl : float or None
+        Initial pheromone level. If ``None``, tau0 is derived as ``|V| / Lgb``
+        from a deterministic baseline route.
     heuristic_weight : float
-        The exponent applied to the pheromone levels, determining the importance of pheromone trails in the decision process.
-
+        Legacy positional name for alpha, the pheromone exponent.
     pheromone_weight : float
-        The exponent applied to the inverse of the weights (costs), determining the importance of heuristic desirability in the decision process.
+        Legacy positional name for beta, the inverse-cost exponent.
+    max_epochs : int
+        Maximum number of epochs to run.
 
     Returns:
     --------
-    path : list of int
-        The list of nodes representing the optimal sequence of nodes found by the ants.
-
+    path : list of hashable or None
+        The best route seen, or ``None`` if no route is found.
     cost : float
-        The total cost associated with the optimal path found by the ants.
-
+        Cost of the best route, or ``np.inf`` when no route exists.
     total_time : float
-        The time taken (in seconds) to complete the optimization process.
-
+        Execution time in seconds.
     epochs : int
-        The number of epochs (iterations) the algorithm ran before converging to a solution.
+        Number of completed epochs.
     """
     start_time = time()
-    
-    pheromone_graph = generate_pheromone_map(graph_map, initial_pheromone_lvl)
-    routes = [None] * ants_number
-    distances = np.zeros(ants_number)
+    require_edge_types = bool(graph_map.get("buses")) or any(
+        isinstance(node, str) and node.startswith("bus:")
+        for node in graph_map.get("node_index", [])
+    )
+    validate_graph(graph_map, require_edge_types=require_edge_types)
+    if start_node == end_node:
+        if start_node in graph_map["node_index"]:
+            return [start_node], 0.0, time() - start_time, 0
+        return None, np.inf, time() - start_time, 0
 
+    if initial_pheromone_lvl is None:
+        baseline_cost = deterministic_route_cost(graph_map, start_node, end_node)
+        if not np.isfinite(baseline_cost):
+            return None, np.inf, time() - start_time, 0
+        tau0 = 1.0 if baseline_cost == 0 else len(graph_map["node_index"]) / baseline_cost
+    else:
+        tau0 = initial_pheromone_lvl
+    alpha = heuristic_weight
+    beta = pheromone_weight
+    pheromone_graph = generate_pheromone_map(graph_map, tau0)
+    routes = [None] * ants_number
+    distances = np.full(ants_number, np.inf)
+    best_path = None
+    best_cost = np.inf
     epochs = 0
-    counter = 0
-    
-    while counter < ants_number and epochs < max_epochs:
-        # Each ant makes its journey
+    converged_ants = 0
+
+    while converged_ants < ants_number and epochs < max_epochs:
+        # Construct routes and retain the best route
         for ant in range(ants_number):
-            path_found,path_distance = ant_solution_ACO(graph_map, pheromone_graph, start_node, end_node, heuristic_weight, pheromone_weight)
-            routes[ant] = path_found
-            distances[ant] = path_distance
+            route, distance = ant_solution_ACO(
+                graph_map,
+                pheromone_graph,
+                start_node,
+                end_node,
+                alpha,
+                beta,
+            )
+
+            routes[ant] = route
+            distances[ant] = distance
+
+            if np.isfinite(distance) and distance < best_cost:
+                best_path = route.copy()
+                best_cost = distance
 
         # Global pheromone evaporation
-        for key in pheromone_graph:
-            pheromone_graph[key] *= (1 - evaporation_rate)
+        for pheromones in pheromone_graph.values():
+            pheromones *= 1 - evaporation_rate
 
         # Global pheromone deposition
-        for ant in range(ants_number):
-            if distances[ant] != np.inf:
-                for i in range(len(routes[ant]) - 1):
-                    current_route_node = routes[ant][i]
-                    next_route_node = routes[ant][i+1]
-                    indx_next_node = graph_map["connections"][current_route_node].index(next_route_node)
-                    pheromone_graph[current_route_node][indx_next_node] += 1 / distances[ant]
+        for route, distance in zip(routes, distances):
+            if not np.isfinite(distance):
+                continue
 
-        # Check termination criteria
-        number_of_solutions = distances[distances != np.inf].size
-        if number_of_solutions > 0:
-            _, counter = Counter(distances[distances != np.inf]).most_common(1)[0]
+            deposit = 0.0 if distance == 0 else 1 / distance
+            for current_node, next_node in zip(route, route[1:]):
+                edge_index = graph_map["connections"][current_node].index(next_node)
+                pheromone_graph[current_node][edge_index] += deposit
 
+        # Check convergence
+        finite_distances = distances[np.isfinite(distances)]
+        if finite_distances.size:
+            _, converged_ants = Counter(finite_distances).most_common(1)[0]
         epochs += 1
-    
-    # Return the optimal path
-    finite_mask = distances != np.inf
-    if np.any(finite_mask):
-        best_idx = np.argmin(distances[finite_mask])
-        finite_indices = np.where(finite_mask)[0]
-        selected = finite_indices[best_idx]
-        optimal_path = routes[selected]
-        total_distance = distances[selected]
-    else:
-        optimal_path = routes[0]
-        total_distance = distances[0]
-    
-    total_time = time() - start_time
 
-    return optimal_path, total_distance, total_time, epochs
+    return best_path, best_cost, time() - start_time, epochs

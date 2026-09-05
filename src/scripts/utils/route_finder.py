@@ -1,4 +1,7 @@
 import heapq
+from itertools import count
+
+from .generators import validate_graph
 
 def dijkstra(graph, start_node, end_node):
     """
@@ -6,20 +9,25 @@ def dijkstra(graph, start_node, end_node):
 
     Parameters:
     graph (dict): The graph dictionary with node indices, connections, and weights.
-    start_node (int): The starting node.
-    end_node (int): The ending node.
+    start_node: The starting node.
+    end_node: The ending node.
 
     Returns:
     list: The route from start_node to end_node.
     """
-    # Initialize the priority queue
-    priority_queue = [(0, start_node, [])]
+    validate_graph(graph, require_edge_types=False)
+    if start_node not in graph['node_index'] or end_node not in graph['node_index']:
+        raise ValueError("Start and end nodes must exist in the graph")
+
+    # The sequence prevents heap ties from comparing opaque mixed node IDs.
+    sequence = count()
+    priority_queue = [(0, next(sequence), start_node, [])]
     visited = set()
     distances = {node: float('inf') for node in graph['node_index']}
     distances[start_node] = 0
 
     while priority_queue:
-        (current_distance, current_node, path) = heapq.heappop(priority_queue)
+        (current_distance, _, current_node, path) = heapq.heappop(priority_queue)
 
         # If the end node is reached, return the path
         if current_node == end_node:
@@ -42,6 +50,6 @@ def dijkstra(graph, start_node, end_node):
                     distance = current_distance + weight
                     if distance < distances[neighbor]:
                         distances[neighbor] = distance
-                        heapq.heappush(priority_queue, (distance, neighbor, path))
+                        heapq.heappush(priority_queue, (distance, next(sequence), neighbor, path))
 
     return None  # Return None if no path is found

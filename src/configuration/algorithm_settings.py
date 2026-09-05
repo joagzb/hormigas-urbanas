@@ -1,14 +1,16 @@
 settings = {
   "ants": 50,
-  "f_ini": 0.2,  # initial level of pheromone
-  "f_max": 0.9,  # max level of pheromone allowed for each edge (Max-Min ant)
-  "f_min": 0.01, # min level of pheromone allowed for each edge (Best-worst ant and Max-Min ant)
+  "f_ini": None,  # derive each algorithm's documented tau0
+  "f_min": 1e-6, # BWAS floor below the derived pheromone level for this city
   "evaporation_rate": 0.1,  # (p) pheromone evaporation level - lowered to improve memory retention
   "epomax": 500,
   "local_evaporation_rate": 0.1,  # rho - lowered to be consistent
-  "transition_probability": 0.2,  # q0
-  "alfa": 1.0,  # heuristic_weight (exponent on pheromone) - increased slightly to rely more on history
-  "beta": 0.5,  # pheromone_weight (exponent on 1/cost) - decreased to reduce greediness against bus entry
+  "transition_probability": 0.9,  # q0 - probability of ACS exploitation
+  "alfa": 1.0,  # heuristic_weight - exponent on pheromone
+  "beta": 2.0,  # pheromone_weight - exponent on inverse selection cost
+  "acs_stagnation_epochs": 25,
+  "bwas_stagnation_epochs": 50,
+  "bwas_restart_stagnation": 8,
 }
 
 presets = {
@@ -41,7 +43,7 @@ def load_profile(name: str) -> dict:
 
   The returned dict includes keys used across ACO/ACS implementations:
   - ants, evaporation_rate, f_ini, alfa, beta, epomax,
-    local_evaporation_rate, transition_probability
+    local_evaporation_rate, transition_probability, and stagnation limits
   """
   base = dict(settings)
   profile = presets.get(name)

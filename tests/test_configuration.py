@@ -1,4 +1,7 @@
+import json
 import logging
+from pathlib import Path
+
 from src.configuration import algorithm_settings, graph_settings
 
 logger = logging.getLogger(__name__)
@@ -9,7 +12,6 @@ def test_algorithm_settings_keys_and_values():
     expected_keys = {
         "ants",
         "f_ini",
-        "f_max",
         "f_min",
         "evaporation_rate",
         "epomax",
@@ -17,12 +19,13 @@ def test_algorithm_settings_keys_and_values():
         "transition_probability",
         "alfa",
         "beta",
+        "acs_stagnation_epochs",
+        "bwas_stagnation_epochs",
+        "bwas_restart_stagnation",
     }
     assert set(algorithm_settings.settings.keys()) == expected_keys
 
     rate_keys = {
-        "f_ini",
-        "f_max",
         "f_min",
         "evaporation_rate",
         "local_evaporation_rate",
@@ -30,12 +33,28 @@ def test_algorithm_settings_keys_and_values():
     }
     for key, value in algorithm_settings.settings.items():
         logger.info("algorithm_settings[%s] = %s", key, value)
-        if key in rate_keys:
+        if key == "f_ini":
+            assert value is None
+        elif key in rate_keys:
             assert 0 <= value <= 1
-        elif key in {"ants", "epomax"}:
+        elif key in {
+            "ants",
+            "epomax",
+            "acs_stagnation_epochs",
+            "bwas_stagnation_epochs",
+            "bwas_restart_stagnation",
+        }:
             assert value > 0
         else:
             assert value > 0
+
+    assert algorithm_settings.settings["f_min"] == 1e-6
+    assert algorithm_settings.settings["transition_probability"] == 0.9
+    assert algorithm_settings.settings["alfa"] == 1.0
+    assert algorithm_settings.settings["beta"] == 2.0
+    assert algorithm_settings.settings["acs_stagnation_epochs"] == 25
+    assert algorithm_settings.settings["bwas_stagnation_epochs"] == 50
+    assert algorithm_settings.settings["bwas_restart_stagnation"] == 8
 
 
 def test_graph_settings_keys_and_values():
@@ -54,3 +73,28 @@ def test_graph_settings_keys_and_values():
             assert 0 < value <= 1
         else:
             assert value > 0
+
+
+def test_notebook_uses_algorithm_settings_for_experiment_parameters():
+    notebook = json.loads(Path("src/TPF.ipynb").read_text(encoding="utf-8"))
+    source = "".join(
+        line
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+        for line in cell["source"]
+    )
+
+    expected_assignments = {
+        "num_ants = settings['ants']",
+        "evaporation_rate = settings['evaporation_rate']",
+        "initial_pheromone_lvl = settings['f_ini']",
+        "heuristic_weight = settings['alfa']",
+        "pheromone_weight = settings['beta']",
+        "epomax = settings['epomax']",
+        "local_evap_rate = settings['local_evaporation_rate']",
+        "transition_prob = settings['transition_probability']",
+        "acs_stagnation_epochs = settings['acs_stagnation_epochs']",
+        "bwas_stagnation_epochs = settings['bwas_stagnation_epochs']",
+        "bwas_restart_stagnation = settings['bwas_restart_stagnation']",
+    }
+    assert all(assignment in source for assignment in expected_assignments)

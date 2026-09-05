@@ -1,8 +1,20 @@
+from typing import Hashable
+
 import numpy as np
+
 from ..utils.roulette_selection import roulette_wheel_selection
 from ..utils.heuristic_weights import normalize_for_selection
+from ..utils.generators import validate_graph
 
-def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_node:int, heuristic_weight:float, pheromone_weight:float):
+
+def ant_solution_ACO(
+    graph_map: dict,
+    pheromone_graph: dict,
+    start_node: Hashable,
+    end_node: Hashable,
+    heuristic_weight: float,
+    pheromone_weight: float,
+):
     """
     Executes the Ant Colony Optimization (ACO) algorithm to find a path from a start node to an end node in a graph.
 
@@ -16,39 +28,54 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_
     pheromone_graph : dict
         A dictionary where keys are nodes and values are lists representing the pheromone levels on the edges to neighboring nodes.
 
-    start_node : int
+    start_node
         The node where the ant starts its search (ant hill).
 
-    end_node : int
+    end_node
         The node where the ant aims to reach (food).
 
     heuristic_weight : float
-        The exponent applied to the pheromone levels, representing the importance of the pheromone trail in the decision process.
+        Legacy positional name for alpha, the pheromone exponent.
 
     pheromone_weight : float
-        The exponent applied to the inverse of the weights (costs), representing the importance of the heuristic (desirability) in the decision process.
+        Legacy positional name for beta, the inverse-cost exponent.
 
     Returns:
     --------
-    path : list of int or float
+    path : list
         A list of nodes representing the solution path found by the ant. If the ant gets "lost" and cannot find a valid path, `float('inf')` is appended to the path.
 
     solution_cost : float
         The total cost associated with the solution path. If the ant gets lost, this value is `float('inf')`.
     """
 
+    alpha = heuristic_weight
+    beta = pheromone_weight
+    require_edge_types = bool(graph_map.get("buses")) or any(
+        isinstance(node, str) and node.startswith("bus:")
+        for node in graph_map.get("node_index", [])
+    )
+    validate_graph(graph_map, require_edge_types=require_edge_types)
+    if start_node not in graph_map["node_index"] or end_node not in graph_map["node_index"]:
+        return None, np.inf
     solution_path = [start_node]
     solution_cost = 0
 
+    # Construct a route without revisiting nodes
     while solution_path[-1] != end_node:
         current_node = solution_path[-1]
-        neighbors = np.array(graph_map["connections"][current_node])
+        neighbors = np.array(graph_map["connections"][current_node], dtype=object)
         neighbors_weights = np.array(graph_map["weights"][current_node])
+        neighbors_edge_types = np.array(
+            graph_map.get("edge_types", {}).get(current_node, ["walk"] * len(neighbors)),
+            dtype=object,
+        )
         neighbors_pheromones = np.array(pheromone_graph[current_node])
 
         filter_visited_nodes_mask = ~np.isin(neighbors, solution_path)
         neighbors = neighbors[filter_visited_nodes_mask]
         neighbors_weights = neighbors_weights[filter_visited_nodes_mask]
+        neighbors_edge_types = neighbors_edge_types[filter_visited_nodes_mask]
         neighbors_pheromones = neighbors_pheromones[filter_visited_nodes_mask]
 
         if len(neighbors) == 0:
@@ -56,16 +83,16 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_
             break
 
         # Calculate probabilities for moving to the next node
-        pheromone_values = neighbors_pheromones ** heuristic_weight
-        effective_weights = normalize_for_selection(neighbors_weights)
-        heuristic_values = (1.0 / effective_weights) ** pheromone_weight
+        pheromone_values = neighbors_pheromones ** alpha
+        selection_weights = normalize_for_selection(neighbors_weights, neighbors_edge_types)
+        heuristic_values = (1.0 / selection_weights) ** beta
         combined = pheromone_values * heuristic_values
         sum_values = np.sum(combined)
 
         # guard against numerical issues (e.g., all zeros)
         if sum_values <= 0 or not np.isfinite(sum_values):
             # Fallback to greedy by cost
-            next_node = int(neighbors[np.argmin(neighbors_weights)])
+            next_node = neighbors[np.argmin(selection_weights)]
             solution_path.append(next_node)
             continue
 
@@ -73,7 +100,7 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph:dict, start_node:int, end_
 
         # select the next node based on the roulette wheel selection
         next_node_index = roulette_wheel_selection(probabilities)
-        solution_path.append(int(neighbors[next_node_index-1]))
+        solution_path.append(neighbors[next_node_index-1])
 
     if solution_path[-1] != np.inf:  # If the ant is not lost, return the path and calculate the total cost
         for i in range(len(solution_path) - 1):

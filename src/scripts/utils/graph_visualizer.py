@@ -1,8 +1,10 @@
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Hashable, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
+
+from .generators import validate_graph
 
 
 def build_graph_from_dict(graph_dict: dict) -> nx.DiGraph:
@@ -10,37 +12,45 @@ def build_graph_from_dict(graph_dict: dict) -> nx.DiGraph:
 
     Expected keys in graph_dict: "node_index", "connections", "weights".
     """
+    validate_graph(graph_dict, require_edge_types=False)
     graph_nx = nx.DiGraph()
 
     for node in graph_dict["node_index"]:
         graph_nx.add_node(node)
 
+    for bus in graph_dict.get("buses", []):
+        for map_node, bus_node in bus["stops"]:
+            graph_nx.nodes[bus_node]["node_type"] = "bus"
+            graph_nx.nodes[bus_node]["map_node"] = map_node
+            graph_nx.nodes[bus_node]["line_id"] = bus["line_id"]
+            graph_nx.nodes[bus_node]["direction"] = bus["direction"]
+
+    edge_types = graph_dict.get("edge_types", {})
     for node, neighbors in graph_dict["connections"].items():
         weights = graph_dict["weights"].get(node, [])
-        for neighbor, weight in zip(neighbors, weights):
-            graph_nx.add_edge(node, neighbor, weight=weight)
+        node_edge_types = edge_types.get(node, [None] * len(neighbors))
+        for neighbor, weight, edge_type in zip(neighbors, weights, node_edge_types):
+            graph_nx.add_edge(node, neighbor, weight=weight, edge_type=edge_type)
 
     return graph_nx
 
 
-def _grid_positions(graph_dict: dict, graph_nx: nx.DiGraph) -> Optional[Dict[int, Tuple[float, float]]]:
-    """Return a grid layout when base nodes are 0..n*n-1; otherwise None.
-
-    Base map nodes are treated as integers < 100000. Bus nodes are >= 100000 and
-    are placed with a small offset next to their base node.
-    """
+def _grid_positions(
+    graph_dict: dict, graph_nx: nx.DiGraph
+) -> Optional[Dict[Hashable, Tuple[float, float]]]:
+    """Return a grid layout when map nodes are 0..n*n-1; otherwise None."""
     try:
         # Prefer explicit branching over one-liners for clarity
         node_index_obj = graph_dict.get("node_index")
         if isinstance(node_index_obj, (set, list)):
-            nodes_sorted = sorted(node_index_obj)
+            nodes = list(node_index_obj)
         else:
-            nodes_sorted = list(graph_nx.nodes)
+            nodes = list(graph_nx.nodes)
 
         # Build base_nodes with a standard loop for clarity
         base_nodes: List[int] = []
-        for n in nodes_sorted:
-            if isinstance(n, int) and n < 100000:
+        for n in nodes:
+            if graph_nx.nodes[n].get("node_type") != "bus" and isinstance(n, int):
                 base_nodes.append(n)
         if not base_nodes:
             return None
@@ -53,22 +63,24 @@ def _grid_positions(graph_dict: dict, graph_nx: nx.DiGraph) -> Optional[Dict[int
         if side * side != (max_base + 1):
             return None
 
-        positions: Dict[int, Tuple[float, float]] = {}
+        positions: Dict[Hashable, Tuple[float, float]] = {}
         # Place base nodes on a grid; row-major indexing
         for n in base_nodes:
             row, col = divmod(n, side)
             positions[n] = (col, -row)
 
         # Place bus nodes slightly offset from their base station
-        bus_nodes: List[int] = []
-        for n in nodes_sorted:
-            if isinstance(n, int) and n >= 100000:
-                bus_nodes.append(n)
-        for n in bus_nodes:
-            base = n - 100000
+        bus_nodes = [n for n in nodes if graph_nx.nodes[n].get("node_type") == "bus"]
+        for index, n in enumerate(sorted(bus_nodes, key=str)):
+            base = graph_nx.nodes[n]["map_node"]
             if base in positions:
                 x, y = positions[base]
-                positions[n] = (x + 0.25, y)
+                if graph_nx.nodes[n]["direction"] == "outbound":
+                    direction_offset = 0.12
+                else:
+                    direction_offset = -0.12
+                line_offset = (index % 3) * 0.04
+                positions[n] = (x + 0.25 + line_offset, y + direction_offset)
             else:
                 positions[n] = (0.0, 0.0)
 
@@ -77,24 +89,34 @@ def _grid_positions(graph_dict: dict, graph_nx: nx.DiGraph) -> Optional[Dict[int
         return None
 
 
-def compute_positions(graph_dict: dict, graph_nx: nx.DiGraph) -> Dict[int, Tuple[float, float]]:
+def compute_positions(
+    graph_dict: dict, graph_nx: nx.DiGraph
+) -> Dict[Hashable, Tuple[float, float]]:
     """Compute node positions with grid preference and spring fallback."""
     return _grid_positions(graph_dict, graph_nx) or nx.spring_layout(graph_nx, seed=42)
 
 
-def node_style(graph_nx: nx.DiGraph, base_size: int = 300, bus_size: int = 450) -> Tuple[List[str], List[int]]:
+def node_style(
+    graph_nx: nx.DiGraph, base_size: int = 300, bus_size: int = 450
+) -> Tuple[List[str], List[int]]:
     """Per-node color and size sequences for drawing.
 
     Sizes are provided by caller to allow adaptive scaling.
     """
-    colors = ["orange" if n >= 100000 else "lightblue" for n in graph_nx.nodes]
-    sizes = [bus_size if n >= 100000 else base_size for n in graph_nx.nodes]
+    colors = [
+        "orange" if graph_nx.nodes[n].get("node_type") == "bus" else "lightblue"
+        for n in graph_nx.nodes
+    ]
+    sizes = [
+        bus_size if graph_nx.nodes[n].get("node_type") == "bus" else base_size
+        for n in graph_nx.nodes
+    ]
     return colors, sizes
 
 
 def draw_base_graph(
     graph_nx: nx.DiGraph,
-    positions: Dict[int, Tuple[float, float]],
+    positions: Dict[Hashable, Tuple[float, float]],
     *,
     draw_labels: bool,
     node_size_base: int,
@@ -121,7 +143,11 @@ def draw_base_graph(
         nx.draw_networkx_edges(graph_nx, positions, edge_color="gray", alpha=edge_alpha, arrows=True, width=edge_width)
 
 
-def highlight_route(graph_nx: nx.DiGraph, positions: Dict[int, Tuple[float, float]], path: List[int]):
+def highlight_route(
+    graph_nx: nx.DiGraph,
+    positions: Dict[Hashable, Tuple[float, float]],
+    path: List[Hashable],
+):
     """Highlight a route on top of an existing graph drawing."""
     if not path:
         return
@@ -136,14 +162,18 @@ def highlight_route(graph_nx: nx.DiGraph, positions: Dict[int, Tuple[float, floa
     )
 
 
-def draw_graph(graph: dict, path: Optional[List[int]] = None, save_path: Optional[str] = None):
+def draw_graph(
+    graph: dict,
+    path: Optional[List[Hashable]] = None,
+    save_path: Optional[str] = None,
+):
     """Draw a graph highlighting bus nodes and optionally a specific path.
 
     Parameters
     ----------
     graph : dict
         Graph structure with "node_index", "connections" and "weights".
-    path : list[int], optional
+    path : list, optional
         Sequence of node IDs representing a path to highlight.
     save_path : str, optional
         If provided, saves the figure to this path; otherwise shows it.
@@ -159,7 +189,7 @@ def draw_graph(graph: dict, path: Optional[List[int]] = None, save_path: Optiona
     # Estimate grid side length using an explicit loop (avoid generator one-liner)
     base_count = 0
     for n in graph_nx.nodes:
-        if isinstance(n, int) and n < 100000:
+        if graph_nx.nodes[n].get("node_type") != "bus":
             base_count += 1
     side_guess = int(math.sqrt(max(1, base_count)))
 

@@ -1,6 +1,6 @@
 # Urban Ants
 
-An optimal route-finding algorithm between two points in a city, minimizing both time and cost while considering urban public buses. The algorithm has been built following Ant Colony Optimization (ACO) methodology.
+A route-finding experiment between two points in a city using walking and urban buses. Edge weights form one static generalized-cost score; they are not calibrated travel minutes or converted fares, and the model does not represent schedules or headways.
 
 More details about the methodology can be found at:
 - [Joaquin's portfolio](https://joagzb.com)
@@ -26,9 +26,10 @@ More details about the methodology can be found at:
 3. **Run a simple check**
    The repository includes a quick example that can be executed as Python modules:
    ```bash
-   python -m src.scripts.examples.toy_city_generators
+   cd src
+   python -m scripts.utils.toy_city_generators
    ```
-   The script generates a toy square city (10x10), adds a bus line and prints an example
+   The script generates a toy square city (10x10), adds outbound and inbound bus services, and prints an example
    route demonstrating that.
 
 ## Graph visualization
@@ -43,7 +44,7 @@ path = dijkstra(graph, 0, 5)
 draw_graph(graph, path)
 ```
 
-Bus nodes (IDs ≥ 1000) are shown in orange, and the selected path is drawn in red.
+Bus nodes use deterministic opaque IDs such as `bus:UNIQUE:outbound:0`. Service metadata identifies them for orange styling, and the selected path is drawn in red. Graph edges carry aligned `walk`, `board`, `ride`, or `alight` metadata.
 
 ## Running tests
 

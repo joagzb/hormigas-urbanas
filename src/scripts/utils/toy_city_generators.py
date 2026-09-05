@@ -1,12 +1,11 @@
 """Utility generators for simple square graphs used in tests.
 
 These helpers are primarily intended for quick experimentation and unit tests.
-They build a deterministic square grid and a single vertical bus line to
+They build a deterministic square grid and a vertical bus line in both directions to
 validate routing algorithms.
 """
 
 from ..utils.graph_visualizer import draw_graph
-import copy
 from ..utils.weights import calculate_bus_time_travel_cost
 from ..utils.generators import merge_bus_and_map_graph
 from ..utils.route_finder import dijkstra
@@ -26,6 +25,7 @@ def generate_square_city_graph(size, fixed_weight):
         "node_index": set(range(size * size)),
         "connections": [],
         "weights": [],
+        "edge_types": [],
     }
 
     for i in range(size):
@@ -34,30 +34,36 @@ def generate_square_city_graph(size, fixed_weight):
 
             graph["connections"].append((current_node, []))
             graph["weights"].append((current_node, []))
+            graph["edge_types"].append((current_node, []))
 
             if i > 0:  # North
                 graph["connections"][-1][1].append(current_node - size)
                 graph["weights"][-1][1].append(fixed_weight)
+                graph["edge_types"][-1][1].append("walk")
 
             if i < size - 1:  # South
                 graph["connections"][-1][1].append(current_node + size)
                 graph["weights"][-1][1].append(fixed_weight)
+                graph["edge_types"][-1][1].append("walk")
 
             if j > 0:  # West
                 graph["connections"][-1][1].append(current_node - 1)
                 graph["weights"][-1][1].append(fixed_weight)
+                graph["edge_types"][-1][1].append("walk")
 
             if j < size - 1:  # East
                 graph["connections"][-1][1].append(current_node + 1)
                 graph["weights"][-1][1].append(fixed_weight)
+                graph["edge_types"][-1][1].append("walk")
 
     graph["connections"] = dict(graph["connections"])
     graph["weights"] = dict(graph["weights"])
+    graph["edge_types"] = dict(graph["edge_types"])
 
     return graph
 
 
-def generate_bus_line_square_city(size, fixed_weight):
+def generate_bus_line_square_city(size, fixed_weight, line_id="UNIQUE", route=None):
     """
     Generate a bus line graph in a square city with the given size and fixed edge weight.
 
@@ -66,49 +72,61 @@ def generate_bus_line_square_city(size, fixed_weight):
         fixed_weight (float): The weight for each edge.
 
     Returns:
-        list: A list containing the bus line graph.
+        list: The outbound and inbound directed bus services.
     """
-    bus_node_index_offset = 100000
     distance = calculate_bus_time_travel_cost(fixed_weight)
+    if route is None:
+        route = list(range(min(5, size - 1), size * size, size))
 
-    route = list(range(5, size * size, size))
-    node_bus_index = set()
-    for node in route:
-        node_bus_index.add(node + bus_node_index_offset)
+    buses = []
+    directions = (("outbound", list(route)), ("inbound", list(reversed(route))))
+    for direction, directed_route in directions:
+        bus_nodes = [
+            f"bus:{line_id}:{direction}:{i}" for i in range(len(directed_route))
+        ]
+        bus_dict = {
+            "name": f"bus line {line_id} {direction}",
+            "line_id": line_id,
+            "direction": direction,
+            "stops": list(zip(directed_route, bus_nodes)),
+            "route": directed_route,
+            "node_bus_index": set(bus_nodes),
+            "connections": {},
+            "weights": {},
+            "edge_types": {},
+        }
 
-    bus_dict = {
-        "name": "bus line UNIQUE",
-        "stops": [],
-        "route": route,
-        "node_bus_index": node_bus_index,
-        "connections": [],
-        "weights": [],
-    }
+        for i, bus_current in enumerate(bus_nodes):
+            if i < len(bus_nodes) - 1:
+                bus_dict["connections"][bus_current] = [bus_nodes[i + 1]]
+                bus_dict["weights"][bus_current] = [distance]
+                bus_dict["edge_types"][bus_current] = ["ride"]
+            else:
+                bus_dict["connections"][bus_current] = []
+                bus_dict["weights"][bus_current] = []
+                bus_dict["edge_types"][bus_current] = []
+        buses.append(bus_dict)
 
-    for i, current_node in enumerate(route):
-        bus_current = current_node + bus_node_index_offset
-        bus_dict["stops"].append((current_node, bus_current))
-
-        if i < len(route) - 1:
-            bus_next = route[i + 1] + bus_node_index_offset
-            bus_dict["connections"].append((bus_current, [bus_next]))
-            bus_dict["weights"].append((bus_current, [distance]))
-        else:
-            bus_dict["connections"].append((bus_current, []))
-            bus_dict["weights"].append((bus_current, []))
-
-    bus_dict["connections"] = dict(bus_dict["connections"])
-    bus_dict["weights"] = dict(bus_dict["weights"])
-
-    return [bus_dict]
+    return buses
 
 
 def _compute_route_cost(graph, path):
+    if path is None:
+        return float("inf")
+
     total = 0.0
     for start, end in zip(path, path[1:]):
         idx = graph["connections"][start].index(end)
         total += graph["weights"][start][idx]
     return total
+
+
+def _route_recommendation(route_cost, walking_cost):
+    if route_cost == float("inf") and walking_cost == float("inf"):
+        return "no route could be found."
+    if walking_cost <= route_cost:
+        return "you'd better go by foot."
+    return "you'd better take the bus instead of walking."
 
 
 if __name__ == "__main__":
@@ -117,7 +135,7 @@ if __name__ == "__main__":
 
     map_graph = generate_square_city_graph(size, fixed_weight)
     buses_graph = generate_bus_line_square_city(size, fixed_weight)
-    full_graph = merge_bus_and_map_graph(copy.deepcopy(map_graph), buses_graph)
+    full_graph = merge_bus_and_map_graph(map_graph, buses_graph)
 
     # Prompt user for start and end nodes
     min_node, max_node = 0, size * size - 1
@@ -146,12 +164,11 @@ if __name__ == "__main__":
     draw_graph(full_graph, route_solution, save_path="toy_city_graph_solution.png")
     draw_graph(map_graph, route_solution_only_walking, save_path="toy_city_graph_solution_walking.png")
 
+    route_cost = _compute_route_cost(full_graph, route_solution)
+    walking_cost = _compute_route_cost(map_graph, route_solution_only_walking)
+
     print("Route solution:", route_solution)
-    print("Route cost:", _compute_route_cost(full_graph, route_solution))
+    print("Route cost:", route_cost)
     print("Route solution (walking):", route_solution_only_walking)
-    print("Route cost (walking):", _compute_route_cost(map_graph, route_solution_only_walking))
-    
-    if route_solution_only_walking >= route_solution:
-        print("you'd better go by foot.")
-    else:
-        print("you'd better take the bus instead of walking.")
+    print("Route cost (walking):", walking_cost)
+    print(_route_recommendation(route_cost, walking_cost))

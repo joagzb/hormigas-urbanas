@@ -1,3 +1,4 @@
+# Static generalized-cost coefficients; they are not real minutes or fares.
 settings = {
   "wait_for_bus_cost": 0.9,
   "pay_for_bus_cost": 0.5,

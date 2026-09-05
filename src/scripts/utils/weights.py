@@ -1,5 +1,8 @@
 import math
 
+# All edge weights are one static generalized-cost score. These coefficients
+# are not calibrated minutes, converted fares, schedules, or headways.
+
 # Support both execution modes:
 # - tests add `src` to sys.path -> top-level package is `configuration`
 # - running as a package `python -m src...` -> package path is `src.configuration`
@@ -58,8 +61,8 @@ def haversine(lat1, lon1, lat2, lon2):
 def calculate_bus_get_on_cost():
     """Return the cost incurred when boarding a bus.
 
-    The cost combines waiting for the bus and paying the fare. It is
-    independent of the route length and bus travel time.
+    The cost adds the existing fixed waiting and payment score components. It
+    is independent of route length and bus travel score.
     """
     return settings["wait_for_bus_cost"] + settings["pay_for_bus_cost"]
 
