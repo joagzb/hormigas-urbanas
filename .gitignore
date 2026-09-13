@@ -30,6 +30,9 @@ env
 # generated images
 *.png
 
+# Generated experiment histories
+/tmp/
+
 #cache folders
 .*
 

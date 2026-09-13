@@ -1,5 +1,7 @@
 numpy
 networkx
-matplotlib
+plotly
+nbformat
+ipython
 pre-commit
 ruff
