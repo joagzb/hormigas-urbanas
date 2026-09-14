@@ -2,32 +2,36 @@ from typing import Hashable
 
 import numpy as np
 
+from ..utils.heuristic_weights import normalize_weights_for_selection
 from ..utils.roulette_selection import roulette_wheel_selection
-from ..utils.heuristic_weights import normalize_for_selection
 
 
 def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: Hashable, end_node: Hashable, heuristic_weight: float, pheromone_weight: float):
   """
-  Finds a path from the start node to the end node using an ant-inspired algorithm that incorporates pheromone levels
-  and heuristic information to guide the search.
+  Executes the Best-Worst ant colony (BWAS) algorithm to find a path from a start node to an end node in a graph.
 
   Parameters:
   - graph_map (dict): A preflighted graph with opaque node IDs and positionally
       aligned ``connections``, ``weights``, and ``edge_types`` rows.
+
   - pheromone_graph (dict): A dictionary where keys are nodes and values are lists of pheromone levels for edges leading to neighbors.
+
   - start_node: The starting node (ant nest) in the graph.
+
   - end_node: The destination node (food) in the graph.
+
   - heuristic_weight (float): Legacy positional name for alpha, the pheromone exponent.
+
   - pheromone_weight (float): Legacy positional name for beta, the inverse-cost exponent.
 
-  Returns:
-  - solution_path (list): The sequence of nodes representing the path found by the ant. Includes `np.inf` if no valid path is found.
-  - solution_cost (float): The total cost of the path found. Returns `np.inf` if the path is invalid or if the ant gets lost.
 
-  Notes:
-  - The function uses a probabilistic approach to select the next node based on pheromone levels and heuristic information.
-  - The roulette wheel selection is employed to choose the next node based on calculated probabilities.
-  - If the ant cannot move to any new node (i.e., all neighbors are visited or no valid path), it appends `np.inf` to indicate failure.
+  Returns:
+  --------
+  solution_path : list
+      A list of nodes representing the solution path found by the ant. If the ant gets "lost" and cannot find a valid path, `float('inf')` is appended to the path.
+
+  solution_cost : float
+      The total cost associated with the solution path. If the ant gets lost, this value is `float('inf')`.
   """
 
   alpha = heuristic_weight
@@ -36,9 +40,10 @@ def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: 
   visited_nodes = {start_node}
   solution_cost = 0
 
-  # Construct a route without revisiting nodes
+  # Construct a route
   while solution_path[-1] != end_node:
     current_node = solution_path[-1]
+
     neighbors = np.array(graph_map['connections'][current_node], dtype=object)
     neighbors_weights = np.array(graph_map['weights'][current_node])
     neighbors_edge_types = np.array(graph_map['edge_types'][current_node], dtype=object)
@@ -51,28 +56,26 @@ def ant_solution_best_worst(graph_map: dict, pheromone_graph: dict, start_node: 
     neighbors_edge_types = neighbors_edge_types[filter_visited_nodes_mask]
     neighbors_pheromones = neighbors_pheromones[filter_visited_nodes_mask]
 
-    # The ant gets lost if there are no unvisited neighbors
     if len(neighbors) == 0:
-      solution_path.append(np.inf)
+      solution_path.append(np.inf)  # ant is lost if there are no unvisited neighbors. Stop the search
       break
 
-    # Calculate the selection probabilities for each neighboring node
+    # calculate probabilities for moving to the next node
     pheromone_values = neighbors_pheromones**alpha
-    selection_weights = normalize_for_selection(neighbors_weights, neighbors_edge_types)
+    selection_weights = normalize_weights_for_selection(neighbors_weights, neighbors_edge_types)
     heuristic_values = (1.0 / selection_weights) ** beta
     combined = pheromone_values * heuristic_values
     sum_values = np.sum(combined)
 
-    # Guard against degenerate probabilities
+    # guard against numerical issues (e.g., all zeros). Fallback to greedy by cost
     if sum_values <= 0 or not np.isfinite(sum_values):
       next_node = neighbors[np.argmin(selection_weights)]
       solution_path.append(next_node)
       visited_nodes.add(next_node)
       continue
 
-    probabilities = combined / sum_values
-
     # Select the next node using roulette wheel selection
+    probabilities = combined / sum_values
     next_node_index = roulette_wheel_selection(probabilities)
     next_node = neighbors[next_node_index]
     solution_path.append(next_node)

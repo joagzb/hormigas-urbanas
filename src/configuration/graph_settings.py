@@ -20,7 +20,7 @@ graph_presets = {
 
 
 def load_graph_profile(name: str) -> dict:
-  """Return a copy of base graph settings with the named preset applied."""
+  """Return a preset setting if exists, otherwise a default config."""
   base = dict(settings)
   preset = graph_presets.get(name)
   if preset:

@@ -9,14 +9,9 @@ except ModuleNotFoundError:  # pragma: no cover
   from configuration.graph_settings import settings as graph_settings
 
 
-def normalize_for_selection(weights: np.ndarray, edge_types: np.ndarray) -> np.ndarray:
-  """Return a copy of weights with bus board/exit edges adjusted for heuristic use.
+def normalize_weights_for_selection(weights: np.ndarray, edge_types: np.ndarray) -> np.ndarray:
+  """Return a copy of weights with bus board/exit edges for heuristic use."""
 
-  The true costs (used for distance accumulation) stay untouched. For
-  neighbor selection, boarding edges are made competitively cheap and
-  exit edges more expensive so ants tend to remain on the bus longer
-  instead of exiting at the first opportunity.
-  """
   arr = np.asarray(weights, dtype=float)
   types = np.asarray(edge_types, dtype=object)
   if arr.shape != types.shape:

@@ -1,15 +1,18 @@
 settings = {
   'ants': 20,
-  'f_ini': None,  # derive each algorithm's documented tau0
-  'f_min': 1e-6,  # BWAS floor below the derived pheromone level for this city
-  'evaporation_rate': 0.1,  # (p) pheromone evaporation level - lowered to improve memory retention
-  'epomax': 100,
-  'local_evaporation_rate': 0.1,  # rho - lowered to be consistent
-  'transition_probability': 0.9,  # q0 - probability of ACS exploitation
-  'alfa': 1.0,  # heuristic_weight - exponent on pheromone
-  'beta': 2.0,  # pheromone_weight - exponent on inverse selection cost
+  'f_ini': None,  # None for automatic tau0, or a positive finite value.
+  'f_min': 1e-6,  # Positive finite BWAS floor. Initialization and restarts clamp tau0 to this value.
+  'evaporation_rate': 0.1,  # Global evaporation rate in [0, 1].
+  'epomax': 100,  # Positive integer epoch limit.
+  'local_evaporation_rate': 0.1,  # ACS local evaporation rate in [0, 1].
+  'transition_probability': 0.9,  # ACS-only exploitation probability in [0, 1].
+  'alfa': 1.0,  # Finite, non-negative pheromone exponent.
+  'beta': 2.0,  # Finite, non-negative inverse-cost exponent.
   'global_best_patience': 10,
-  'bwas_restart_stagnation': 8,
+  'bwas_restart_stagnation': 8,  # Zero disables BWAS restarts; when enabled, use a positive value below global_best_patience.
+  'worst_penalty_rate': 0.30,  # BWAS Extra worst-route evaporation rate in [0, 1].
+  'mutation_probability': 0.08,  # BWAS Per-row mutation probability in [0, 1].
+  'mutation_scale': 2.5,  # BWAS Finite, non-negative mutation magnitude multiplier.
 }
 
 presets = {
@@ -95,9 +98,21 @@ presets = {
     'local_evaporation_rate': 0.20,
     'transition_probability': 0.95,
     'global_best_patience': 8,
-    'bwas_restart_stagnation': 10,
+    'bwas_restart_stagnation': 4,
   },
-  # Profile G — Best-Worst Ant System (BWAS Specialization)
+  # Profile G — ACS on large multimodal city.
+  'acs_multimodal': {
+    'ants': 80,
+    'evaporation_rate': 0.20,
+    'f_ini': None,
+    'alfa': 1.0,
+    'beta': 0.5,
+    'epomax': 1500,
+    'local_evaporation_rate': 0.10,
+    'transition_probability': 0.15,
+    'global_best_patience': 30,
+  },
+  # Profile H — Best-Worst Ant System (BWAS specialization).
   'bwas_aggressive': {
     'ants': 50,
     'evaporation_rate': 0.20,
@@ -108,23 +123,17 @@ presets = {
     'epomax': 1500,
     'local_evaporation_rate': 0.10,
     'transition_probability': 0.50,
-    'global_best_patience': 15,
+    'global_best_patience': 30,
     'bwas_restart_stagnation': 5,
-    'worst_penalty_rate': 0.30,
-    'mutation_probability': 0.08,
-    'mutation_scale': 2.5,
+    'worst_penalty_rate': 0.30,  # Extra worst-route evaporation rate in [0, 1].
+    'mutation_probability': 0.08,  # Per-row mutation probability in [0, 1].
+    'mutation_scale': 2.5,  # Finite, non-negative mutation magnitude multiplier.
   },
 }
 
 
 def load_profile(name: str) -> dict:
-  """Return a copy of the base settings updated with a named preset.
-
-  The returned dict includes keys used across ACO/ACS implementations:
-  - ants, evaporation_rate, f_ini, alfa, beta, epomax,
-    local_evaporation_rate, transition_probability, shared global-best patience,
-    and BWAS restart.
-  """
+  """Return a preset setting if exists, otherwise a default config."""
   base = dict(settings)
   profile = presets.get(name)
   if profile:

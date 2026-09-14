@@ -700,6 +700,33 @@ def test_bwas_history_records_final_post_restart_pheromones(monkeypatch, tmp_pat
   assert restart_observation['pheromones'] == pytest.approx([0.5] * 4)
 
 
+def test_bwas_restart_respects_configured_pheromone_floor(monkeypatch):
+  module = importlib.import_module('src.scripts.ant_best_worst.ant_colony_best_worst')
+  solutions = iter([([0, 1, 3], 2.0), ([0, 2, 3], 5.0)])
+  monkeypatch.setattr(module, 'ant_solution_best_worst', lambda *args: next(solutions))
+  observations = []
+
+  module.ABW(
+    GRAPH,
+    START_NODE,
+    END_NODE,
+    1,
+    EVAPORATION_RATE,
+    2,
+    0.5,
+    HEURISTIC_WEIGHT,
+    PHEROMONE_WEIGHT,
+    mutation_probability=0,
+    restart_stagnation=1,
+    min_pheromone_lvl=0.75,
+    epoch_callback=observations.append,
+  )
+
+  restart_observation = observations[-1]
+  assert restart_observation['restarted'] is True
+  assert all(np.all(pheromones >= 0.75) for pheromones in restart_observation['pheromones'].values())
+
+
 def test_real_aco_file_history_matches_final_state_and_limits_frames(monkeypatch, tmp_path):
   np.random.seed(7)
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')

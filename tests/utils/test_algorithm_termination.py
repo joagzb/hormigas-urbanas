@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from src.scripts.utils.algorithm_termination import global_best_patience_exhausted, update_global_best, validate_global_best
+from src.scripts.utils.algorithm_validations import global_best_patience_exhausted, update_global_best, validate_global_best
 
 
 def test_strict_finite_improvement_resets_patience():

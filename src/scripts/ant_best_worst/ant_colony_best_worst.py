@@ -8,7 +8,7 @@ except ModuleNotFoundError:  # Repository-root package imports.
   from src.configuration.algorithm_settings import settings
 
 from ..utils.algorithm_observer import record_stage_data
-from ..utils.algorithm_termination import update_global_best, validate_global_best
+from ..utils.algorithm_validations import update_global_best, validate_global_best
 from ..utils.generators import deterministic_route_cost, generate_pheromone_map
 from .ant_solution_ABW import ant_solution_best_worst
 
@@ -43,6 +43,7 @@ def ABW(
   mutation_probability=0.05,
   mutation_scale=2.0,
   restart_stagnation=None,
+  min_pheromone_lvl=None,
   global_best_patience=10,
   epoch_callback=None,
 ):
@@ -50,42 +51,60 @@ def ABW(
 
   Parameters:
   -----------
-  graph_map : dict
+  - graph_map : dict
       Preflighted graph containing opaque IDs and aligned ``connections``,
       ``weights``, and ``edge_types`` mappings.
-  start_node : hashable
+
+  - start_node : hashable
       The opaque starting node ID (ant hill).
-  end_node : hashable
+
+  - end_node : hashable
       The opaque destination node ID (food).
-  ants_number : int
+
+  - ants_number : int
       The number of ants used in each epoch.
-  global_evap_rate : float
+
+  - global_evap_rate : float
       Pheromone evaporation rate applied after each epoch.
-  max_epochs : int
+
+  - max_epochs : int
       Maximum number of epochs to run.
-  initial_pheromone_lvl : float or None
+
+  - initial_pheromone_lvl : float or None
       Initial pheromone level. If ``None``, an automatic baseline is derived
       from a deterministic reference route. Consult the algorithm
       documentation for the theoretical initialization formula.
-  heuristic_weight : float
+
+  - heuristic_weight : float
       Legacy positional name for alpha, the pheromone exponent.
-  pheromone_weight : float
+
+  - pheromone_weight : float
       Legacy positional name for beta, the inverse-cost exponent.
-  worst_penalty_rate : float or None
+
+  - worst_penalty_rate : float or None
       Extra evaporation rate for worst-route edges. Defaults to
       ``global_evap_rate``.
-  mutation_probability : float
+
+  - mutation_probability : float
       Probability of mutating each pheromone row per epoch.
-  mutation_scale : float
+
+  - mutation_scale : float
       Scale applied to search-progress-based mutation.
-  restart_stagnation : int or None
+
+  - restart_stagnation : int or None
       Consecutive non-improving epochs before pheromone levels restart. A
       ``None`` value uses the configured BWAS restart limit; a non-positive
       value disables restarts.
-  global_best_patience : int
+
+  - min_pheromone_lvl : float or None
+      Positive pheromone floor. A ``None`` value uses the base configuration
+      for backward compatibility.
+
+  - global_best_patience : int
       Consecutive completed epochs without strict global-best improvement
       before stopping.
-  epoch_callback : callable or None
+
+  - epoch_callback : callable or None
       Optional observer called after each completed epoch and any restart,
       with the final ``pheromone_update`` observation.
 
@@ -93,14 +112,19 @@ def ABW(
   --------
   path : list of hashable or None
       The retained global-best route, or ``None`` if no route exists.
+
   cost : float
       Cost of the retained route, or ``np.inf`` when no route exists.
+
   total_time : float
       Execution time in seconds.
+
   epochs : int
       Number of completed epochs.
   """
   start_time = time()
+
+  # initial settings
   validate_global_best(global_best_patience)
 
   if initial_pheromone_lvl is None:
@@ -108,19 +132,23 @@ def ABW(
     if not np.isfinite(baseline_cost):
       return None, np.inf, time() - start_time, 0
     if baseline_cost == 0:
-      tau0 = 1.0
+      initial_pheromone_lvl = 1.0
     else:
-      tau0 = 1 / (len(graph_map['node_index']) * baseline_cost)
-  else:
-    tau0 = initial_pheromone_lvl
+      initial_pheromone_lvl = 1 / (len(graph_map['node_index']) * baseline_cost)
+
   alpha = heuristic_weight
   beta = pheromone_weight
+
   if worst_penalty_rate is None:
     penalty_rate = global_evap_rate
   else:
     penalty_rate = worst_penalty_rate
-  min_pheromone_lvl = settings['f_min']
-  pheromone_graph = generate_pheromone_map(graph_map, tau0)
+
+  if min_pheromone_lvl is None:
+    min_pheromone_lvl = settings['f_min']
+  # The configured floor is an invariant, including initial and restarted trails.
+  restart_pheromone_lvl = max(initial_pheromone_lvl, min_pheromone_lvl)
+  pheromone_graph = generate_pheromone_map(graph_map, restart_pheromone_lvl)
   routes = [None] * ants_number
   distances = np.full(ants_number, np.inf)
   global_best_path = None
@@ -133,15 +161,15 @@ def ABW(
   epochs_without_global_best_improvement = 0
 
   while epochs < max_epochs:
-    iteration_best_path = None
-    iteration_best_cost = np.inf
-    # Construct routes
     for ant in range(ants_number):
+      # each ant constructs a route
       route, distance = ant_solution_best_worst(graph_map, pheromone_graph, start_node, end_node, alpha, beta)
       routes[ant] = route
       distances[ant] = distance
 
     # Retain the global best and select the worst route
+    iteration_best_path = None
+    iteration_best_cost = np.inf
     finite_indices = np.flatnonzero(np.isfinite(distances))
     worst_route = None
     if finite_indices.size:
@@ -150,6 +178,7 @@ def ABW(
       iteration_best_cost = distances[best_index]
       iteration_best_path = routes[best_index].copy()
       worst_route = routes[worst_index]
+
     improved, epochs_without_global_best_improvement = update_global_best(global_best_cost, iteration_best_cost, epochs_without_global_best_improvement)
     if improved:
       global_best_path = iteration_best_path.copy()
@@ -171,7 +200,7 @@ def ABW(
         edge_index = graph_map['connections'][current_node].index(next_node)
         pheromone_graph[current_node][edge_index] += deposit
 
-    # Penalize worst-path edges outside the retained global best
+    # Penalize worst-path found by ant
     if worst_route is not None:
       for current_node, next_node in zip(worst_route, worst_route[1:]):
         if (current_node, next_node) in global_best_edges:
@@ -198,13 +227,15 @@ def ABW(
       restart_stagnant_epochs += 1
     restarted = False
     if restart_stagnation > 0 and restart_stagnant_epochs >= restart_stagnation:
-      pheromone_graph = generate_pheromone_map(graph_map, tau0)
+      pheromone_graph = generate_pheromone_map(graph_map, restart_pheromone_lvl)
       last_restart_epoch = epochs
       restart_stagnant_epochs = 0
       restarted = True
 
+    # advance to next epoch
     epochs += 1
 
+    # record epoch information
     record_stage_data(
       epoch_callback,
       epoch=epochs,
