@@ -5,15 +5,22 @@ import plotly.graph_objects as go
 import pytest
 
 from src.scripts.utils.graph_visualizer import (
+  ExperimentOutputWriter,
   PheromoneHistoryWriter,
   build_graph_from_dict,
   build_pheromone_animation,
+  calculate_animation_stride,
   draw_graph,
   draw_pheromone_history,
   load_pheromone_history,
   node_style,
   stable_edge_order,
 )
+
+
+@pytest.mark.parametrize(('total_iterations', 'expected_stride'), [(0, 1), (1, 1), (100, 1), (101, 2), (1000, 10), (1001, 10)])
+def test_animation_stride_scales_with_completed_iterations(total_iterations, expected_stride):
+  assert calculate_animation_stride(total_iterations) == expected_stride
 
 
 def test_draw_graph_writes_interactive_html(tmp_path):
@@ -221,6 +228,10 @@ def test_draw_history_builds_minimal_route_frames_without_showing(tmp_path, monk
   history_path = tmp_path / 'history.jsonl'
   writer = PheromoneHistoryWriter(graph, history_path)
   for epoch in range(1, 3):
+    if epoch == 1:
+      global_best_path = [0, bus_node]
+    else:
+      global_best_path = [0, bus_node, 1]
     writer(
       {
         'epoch': epoch,
@@ -228,7 +239,7 @@ def test_draw_history_builds_minimal_route_frames_without_showing(tmp_path, monk
         'pheromones': {0: np.array([epoch]), bus_node: np.array([2 * epoch]), 1: np.array([])},
         'iteration_best_path': [0, bus_node, 1],
         'iteration_best_cost': 1.7,
-        'global_best_path': [0, bus_node] if epoch == 1 else [0, bus_node, 1],
+        'global_best_path': global_best_path,
         'global_best_cost': 1.7,
       }
     )
@@ -277,6 +288,54 @@ def test_draw_history_writes_interactive_html_to_created_output_directory(tmp_pa
 
   assert html_path.exists()
   assert 'plotly' in html_path.read_text(encoding='utf-8').lower()
+
+
+def test_experiment_output_writer_owns_cwd_tmp_paths_and_html(monkeypatch, tmp_path):
+  graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
+  monkeypatch.chdir(tmp_path)
+  output = ExperimentOutputWriter(graph, 'aco')
+  output({'epoch': 1, 'pheromones': {0: np.array([1.0]), 1: np.array([])}})
+
+  html_path = output.write_animation()
+
+  assert output.history_path == tmp_path / 'tmp' / 'aco_pheromone_history.jsonl'
+  assert html_path == tmp_path / 'tmp' / 'aco_pheromone_animation.html'
+  assert html_path.exists()
+
+
+def test_experiment_output_writer_uses_adaptive_stride(monkeypatch, tmp_path):
+  graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
+  monkeypatch.chdir(tmp_path)
+  output = ExperimentOutputWriter(graph, 'aco')
+  for epoch in range(1, 102):
+    output({'epoch': epoch, 'pheromones': {0: np.array([1.0]), 1: np.array([])}})
+  captured = {}
+
+  def fake_draw_pheromone_history(*args, **kwargs):
+    captured.update(kwargs)
+    return go.Figure()
+
+  monkeypatch.setattr('src.scripts.utils.graph_visualizer.draw_pheromone_history', fake_draw_pheromone_history)
+
+  output.write_animation()
+
+  assert captured['stride'] == 2
+  assert captured['max_frames'] == 100
+  assert captured['show'] is False
+
+
+def test_adaptive_stride_retains_final_iteration(tmp_path):
+  graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
+  history_path = tmp_path / 'history.jsonl'
+  writer = PheromoneHistoryWriter(graph, history_path)
+  for epoch in range(1, 102):
+    writer({'epoch': epoch, 'pheromones': {0: np.array([1.0]), 1: np.array([])}})
+
+  snapshots = load_pheromone_history(graph, history_path, stride=calculate_animation_stride(101))
+
+  assert snapshots[0]['epoch'] == 1
+  assert snapshots[-1]['epoch'] == 101
+  assert len(snapshots) == 52
 
 
 def test_animation_handles_no_recorded_epochs_and_no_route():

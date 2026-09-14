@@ -4,7 +4,6 @@ import numpy as np
 
 from ..utils.roulette_selection import roulette_wheel_selection
 from ..utils.heuristic_weights import normalize_for_selection
-from ..utils.generators import validate_graph
 
 
 def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashable, end_node: Hashable, heuristic_weight: float, pheromone_weight: float):
@@ -14,9 +13,8 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashabl
   Parameters:
   -----------
   graph_map : dict
-      A dictionary representing the graph structure, where:
-      - "connections": A dict with keys as nodes and values as lists of neighboring nodes.
-      - "weights": A dict with keys as nodes and values as lists of corresponding edge weights to neighboring nodes.
+      A preflighted graph with opaque node IDs and positionally aligned
+      ``connections``, ``weights``, and ``edge_types`` rows.
 
   pheromone_graph : dict
       A dictionary where keys are nodes and values are lists representing the pheromone levels on the edges to neighboring nodes.
@@ -44,10 +42,6 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashabl
 
   alpha = heuristic_weight
   beta = pheromone_weight
-  require_edge_types = bool(graph_map.get('buses')) or any(isinstance(node, str) and node.startswith('bus:') for node in graph_map.get('node_index', []))
-  validate_graph(graph_map, require_edge_types=require_edge_types)
-  if start_node not in graph_map['node_index'] or end_node not in graph_map['node_index']:
-    return None, np.inf
   solution_path = [start_node]
   visited_nodes = {start_node}
   solution_cost = 0
@@ -57,7 +51,7 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashabl
     current_node = solution_path[-1]
     neighbors = np.array(graph_map['connections'][current_node], dtype=object)
     neighbors_weights = np.array(graph_map['weights'][current_node])
-    neighbors_edge_types = np.array(graph_map.get('edge_types', {}).get(current_node, ['walk'] * len(neighbors)), dtype=object)
+    neighbors_edge_types = np.array(graph_map['edge_types'][current_node], dtype=object)
     neighbors_pheromones = np.array(pheromone_graph[current_node])
 
     filter_visited_nodes_mask = np.array([neighbor not in visited_nodes for neighbor in neighbors], dtype=bool)
@@ -89,7 +83,7 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashabl
 
     # select the next node based on the roulette wheel selection
     next_node_index = roulette_wheel_selection(probabilities)
-    next_node = neighbors[next_node_index - 1]
+    next_node = neighbors[next_node_index]
     solution_path.append(next_node)
     visited_nodes.add(next_node)
 

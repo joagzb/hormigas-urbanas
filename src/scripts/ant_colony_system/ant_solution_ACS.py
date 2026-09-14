@@ -4,7 +4,6 @@ import numpy as np
 
 from ..utils.roulette_selection import roulette_wheel_selection
 from ..utils.heuristic_weights import normalize_for_selection
-from ..utils.generators import validate_graph
 
 
 def ant_solution_ACS(
@@ -21,8 +20,8 @@ def ant_solution_ACS(
   """Build one ACS path while updating each selected edge immediately.
 
   Parameters:
-      graph_map (dict): Graph with ``node_index``, ``connections``, and
-          ``weights`` mappings.
+      graph_map (dict): Preflighted graph with opaque node IDs and aligned
+          ``connections``, ``weights``, and ``edge_types`` mappings.
       pheromone_graph (dict): Pheromone values aligned with graph edges.
       start_node: Starting node.
       end_node: Destination node.
@@ -43,10 +42,6 @@ def ant_solution_ACS(
   alpha = heuristic_weight
   beta = pheromone_weight
   tau0 = initial_pheromone_lvl
-  require_edge_types = bool(graph_map.get('buses')) or any(isinstance(node, str) and node.startswith('bus:') for node in graph_map.get('node_index', []))
-  validate_graph(graph_map, require_edge_types=require_edge_types)
-  if start_node not in graph_map['node_index'] or end_node not in graph_map['node_index']:
-    return None, np.inf
   solution_path = [start_node]
   visited_nodes = {start_node}
   solution_cost = 0
@@ -56,7 +51,7 @@ def ant_solution_ACS(
     current_node = solution_path[-1]
     neighbors = np.array(graph_map['connections'][current_node], dtype=object)
     neighbors_weights = np.array(graph_map['weights'][current_node])
-    neighbors_edge_types = np.array(graph_map.get('edge_types', {}).get(current_node, ['walk'] * len(neighbors)), dtype=object)
+    neighbors_edge_types = np.array(graph_map['edge_types'][current_node], dtype=object)
     neighbors_pheromones = np.array(pheromone_graph[current_node])
 
     filter_visited_nodes_mask = np.array([neighbor not in visited_nodes for neighbor in neighbors], dtype=bool)
@@ -92,7 +87,7 @@ def ant_solution_ACS(
       else:
         probabilities = combined / sum_values
         next_node_index = roulette_wheel_selection(probabilities)
-        next_node = neighbors[next_node_index - 1]
+        next_node = neighbors[next_node_index]
 
     solution_path.append(next_node)
     visited_nodes.add(next_node)

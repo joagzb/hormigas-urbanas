@@ -5,13 +5,12 @@ import warnings
 import numpy as np
 import pytest
 
+from src.scripts.ant_best_worst.ant_solution_ABW import ant_solution_best_worst
 from src.scripts.ant_colony_simple_ACO.ant_solution_ACO import ant_solution_ACO
 from src.scripts.ant_colony_system.ant_solution_ACS import ant_solution_ACS
-from src.scripts.ant_best_worst.ant_solution_ABW import ant_solution_best_worst
-from src.scripts.utils.generators import merge_bus_and_map_graph
+from src.scripts.main import prepare_routing_problem
+from src.scripts.utils.generators import generate_bus_line_square_city, generate_square_city_graph, merge_bus_and_map_graph
 from src.scripts.utils.graph_visualizer import PheromoneHistoryWriter, draw_pheromone_history, load_pheromone_history, stable_edge_order
-from src.scripts.utils.toy_city_generators import generate_bus_line_square_city, generate_square_city_graph
-
 
 GRAPH = {
   'node_index': {0, 1, 2, 3},
@@ -46,34 +45,27 @@ def _capture_generated_pheromones(captured):
 
 def _run_aco(graph, start_node, end_node):
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
-  return module.ACO(graph, start_node, end_node, ANTS_NUMBER, EVAPORATION_RATE, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, MAX_EPOCHS)
+  problem = prepare_routing_problem(graph, start_node, end_node)
+  return problem.run(module.ACO, ANTS_NUMBER, EVAPORATION_RATE, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, MAX_EPOCHS)
 
 
 def _run_acs(graph, start_node, end_node):
   module = importlib.import_module('src.scripts.ant_colony_system.ant_colony_system')
-  return module.ACS(
-    graph,
-    start_node,
-    end_node,
-    ANTS_NUMBER,
-    EVAPORATION_RATE,
-    LOCAL_EVAPORATION_RATE,
-    TRANSITION_PROBABILITY,
-    INITIAL_PHEROMONE_LVL,
-    HEURISTIC_WEIGHT,
-    PHEROMONE_WEIGHT,
-    MAX_EPOCHS,
+  problem = prepare_routing_problem(graph, start_node, end_node)
+  return problem.run(
+    module.ACS, ANTS_NUMBER, EVAPORATION_RATE, LOCAL_EVAPORATION_RATE, TRANSITION_PROBABILITY, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, MAX_EPOCHS
   )
 
 
 def _run_bwas(graph, start_node, end_node):
   module = importlib.import_module('src.scripts.ant_best_worst.ant_colony_best_worst')
-  return module.ABW(graph, start_node, end_node, ANTS_NUMBER, EVAPORATION_RATE, MAX_EPOCHS, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
+  problem = prepare_routing_problem(graph, start_node, end_node)
+  return problem.run(module.ABW, ANTS_NUMBER, EVAPORATION_RATE, MAX_EPOCHS, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
 
 
 ALGORITHM_RUNNERS = [_run_aco, _run_acs, _run_bwas]
 
-CONSENSUS_ALGORITHMS = [
+PATIENCE_ALGORITHMS = [
   (
     'src.scripts.ant_colony_system.ant_colony_system',
     'ACS',
@@ -81,6 +73,30 @@ CONSENSUS_ALGORITHMS = [
     (START_NODE, END_NODE, 1, EVAPORATION_RATE, LOCAL_EVAPORATION_RATE, TRANSITION_PROBABILITY, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT),
   ),
   ('src.scripts.ant_best_worst.ant_colony_best_worst', 'ABW', 'ant_solution_best_worst', (START_NODE, END_NODE, 1, EVAPORATION_RATE)),
+]
+
+MAX_EPOCH_ALGORITHMS = [
+  (
+    'src.scripts.ant_colony_simple_ACO.ant_colony_optimization',
+    'ACO',
+    'ant_solution_ACO',
+    (START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 3),
+    {},
+  ),
+  (
+    'src.scripts.ant_colony_system.ant_colony_system',
+    'ACS',
+    'ant_solution_ACS',
+    (START_NODE, END_NODE, 1, EVAPORATION_RATE, LOCAL_EVAPORATION_RATE, TRANSITION_PROBABILITY, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 3),
+    {},
+  ),
+  (
+    'src.scripts.ant_best_worst.ant_colony_best_worst',
+    'ABW',
+    'ant_solution_best_worst',
+    (START_NODE, END_NODE, 1, EVAPORATION_RATE, 3, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT),
+    {'mutation_probability': 0, 'restart_stagnation': 0},
+  ),
 ]
 
 
@@ -99,11 +115,8 @@ def test_derived_pheromone_returns_trivial_route_when_start_equals_end(run_algor
 
 @pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)
 def test_trivial_route_requires_existing_node(run_algorithm):
-  path, cost, _, epochs = run_algorithm(EMPTY_ADJACENCY_GRAPH, 99, 99)
-
-  assert path is None
-  assert np.isinf(cost)
-  assert epochs == 0
+  with pytest.raises(ValueError, match='must exist'):
+    run_algorithm(EMPTY_ADJACENCY_GRAPH, 99, 99)
 
 
 @pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)
@@ -126,7 +139,7 @@ def test_derived_pheromone_returns_no_route_for_unreachable_graph(run_algorithm,
 )
 def test_derived_pheromone_initialization_does_not_invoke_dijkstra(monkeypatch, run_algorithm, module_name, ant_name, expected_tau0):
   generators = importlib.import_module('src.scripts.utils.generators')
-  route_finder = importlib.import_module('src.scripts.utils.route_finder')
+  route_finder = importlib.import_module('src.scripts.utils.dijkstra')
   module = importlib.import_module(module_name)
   generated_levels = []
   original_generator = module.generate_pheromone_map
@@ -156,7 +169,7 @@ def test_aco_and_bwas_transitions_use_actual_aligned_edge_cost(monkeypatch, ant_
 
   def select_first(probabilities):
     observed.setdefault('probabilities', probabilities)
-    return 1
+    return 0
 
   module = importlib.import_module(ant_solution.__module__)
   monkeypatch.setattr(module, 'roulette_wheel_selection', select_first)
@@ -168,69 +181,9 @@ def test_aco_and_bwas_transitions_use_actual_aligned_edge_cost(monkeypatch, ant_
 
 
 @pytest.mark.parametrize('ant_solution', [ant_solution_ACO, ant_solution_ACS, ant_solution_best_worst])
-@pytest.mark.parametrize(('start_node', 'end_node'), [(99, 99), (99, 1), (0, 99)])
-def test_direct_ant_solutions_reject_nonexistent_endpoints(ant_solution, start_node, end_node):
-  pheromones = {0: np.array([]), 1: np.array([])}
-  arguments = [EMPTY_ADJACENCY_GRAPH, pheromones, start_node, end_node]
-  if ant_solution is ant_solution_ACS:
-    arguments.append(TRANSITION_PROBABILITY)
-  arguments.extend([HEURISTIC_WEIGHT, PHEROMONE_WEIGHT])
-
-  path, cost = ant_solution(*arguments)
-
-  assert path is None
-  assert np.isinf(cost)
-
-
-@pytest.mark.parametrize('ant_solution', [ant_solution_ACO, ant_solution_ACS, ant_solution_best_worst])
-def test_direct_ant_solutions_reject_multimodal_graph_without_edge_types(ant_solution):
-  graph = _multimodal_square_graph()
-  graph.pop('edge_types')
-  pheromones = {node: np.ones(len(connections)) for node, connections in graph['connections'].items()}
-  arguments = [graph, pheromones, 0, 2]
-  if ant_solution is ant_solution_ACS:
-    arguments.append(TRANSITION_PROBABILITY)
-  arguments.extend([HEURISTIC_WEIGHT, PHEROMONE_WEIGHT])
-
-  with pytest.raises(ValueError, match='edge_types'):
-    ant_solution(*arguments)
-
-
-@pytest.mark.parametrize('ant_solution', [ant_solution_ACO, ant_solution_ACS, ant_solution_best_worst])
-def test_direct_ant_solutions_reject_tagged_bus_nodes_with_empty_buses(ant_solution):
-  bus_node = 'bus:line:outbound:0'
-  graph = {'node_index': {0, bus_node, 1}, 'connections': {0: [bus_node], bus_node: [1], 1: []}, 'weights': {0: [1.4], bus_node: [0.3], 1: []}, 'buses': []}
-  pheromones = {0: np.array([1.0]), bus_node: np.array([1.0]), 1: np.array([])}
-  arguments = [graph, pheromones, 0, 1]
-  if ant_solution is ant_solution_ACS:
-    arguments.append(TRANSITION_PROBABILITY)
-  arguments.extend([HEURISTIC_WEIGHT, PHEROMONE_WEIGHT])
-
-  with pytest.raises(ValueError, match='edge_types'):
-    ant_solution(*arguments)
-
-
-@pytest.mark.parametrize('ant_solution', [ant_solution_ACO, ant_solution_ACS, ant_solution_best_worst])
-@pytest.mark.parametrize('metadata_problem', ['missing_node', 'misaligned_row'])
-def test_direct_ant_solutions_reject_incomplete_or_malformed_edge_types(ant_solution, metadata_problem):
-  graph = _multimodal_square_graph()
-  if metadata_problem == 'missing_node':
-    graph['edge_types'].pop(next(iter(graph['node_index'])))
-  else:
-    graph['edge_types'][0] = []
-  pheromones = {node: np.ones(len(connections)) for node, connections in graph['connections'].items()}
-  arguments = [graph, pheromones, 0, 2]
-  if ant_solution is ant_solution_ACS:
-    arguments.append(TRANSITION_PROBABILITY)
-  arguments.extend([HEURISTIC_WEIGHT, PHEROMONE_WEIGHT])
-
-  with pytest.raises(ValueError, match='edge_types'):
-    ant_solution(*arguments)
-
-
-@pytest.mark.parametrize('ant_solution', [ant_solution_ACO, ant_solution_ACS, ant_solution_best_worst])
-def test_direct_ant_solutions_keep_plain_walking_graph_compatibility(ant_solution):
+def test_preflight_graph_supports_direct_ant_construction(ant_solution):
   graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
+  graph = prepare_routing_problem(graph, 0, 1).graph
   pheromones = {0: np.array([1.0]), 1: np.array([])}
   arguments = [graph, pheromones, 0, 1]
   if ant_solution is ant_solution_ACS:
@@ -248,7 +201,7 @@ def test_transitions_use_normalized_weights_but_return_original_cost(monkeypatch
   graph = {'node_index': {0, 1, 2}, 'connections': {0: [1, 2], 1: [], 2: []}, 'weights': {0: [0.3, 0.01], 1: [], 2: []}, 'edge_types': {0: ['ride', 'alight'], 1: [], 2: []}}
   pheromones = {0: np.array([1.0, 1.0]), 1: np.array([]), 2: np.array([])}
   module = importlib.import_module(ant_solution.__module__)
-  monkeypatch.setattr(module, 'roulette_wheel_selection', lambda probabilities: int(np.argmax(probabilities)) + 1)
+  monkeypatch.setattr(module, 'roulette_wheel_selection', lambda probabilities: int(np.argmax(probabilities)))
 
   arguments = [graph, pheromones, 0, 1]
   if ant_solution is ant_solution_ACS:
@@ -271,7 +224,7 @@ def test_transitions_preserve_opaque_bus_node_ids(monkeypatch, ant_solution):
   }
   pheromones = {0: np.array([1.0]), bus_node: np.array([1.0]), 1: np.array([])}
   module = importlib.import_module(ant_solution.__module__)
-  monkeypatch.setattr(module, 'roulette_wheel_selection', lambda probabilities: 1)
+  monkeypatch.setattr(module, 'roulette_wheel_selection', lambda probabilities: 0)
 
   arguments = [graph, pheromones, 0, 1]
   if ant_solution is ant_solution_ACS:
@@ -300,7 +253,7 @@ def test_mixed_node_ids_do_not_allow_route_revisits(monkeypatch, ant_solution):
     selection_count += 1
     if selection_count > len(graph['node_index']):
       raise RuntimeError('route construction exceeded graph size')
-    return 1
+    return 0
 
   module = importlib.import_module(ant_solution.__module__)
   monkeypatch.setattr(module, 'roulette_wheel_selection', select_first)
@@ -334,7 +287,7 @@ def test_aco_derives_tau0_and_retains_best_so_far(monkeypatch):
 
   path, cost, _, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 2, EVAPORATION_RATE, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 2)
 
-  assert generated_levels == [2.0]  # |V| / Lgb = 4 / 2
+  assert generated_levels == [2.0]
   assert (path, cost, epochs) == ([0, 1, 3], 2.0, 2)
 
 
@@ -343,7 +296,7 @@ def test_aco_strict_global_best_improvement_resets_patience(monkeypatch):
   solutions = iter([([0, 2, 3], 5.0), ([0, 2, 3], 5.0), ([0, 1, 3], 2.0), ([0, 2, 3], 5.0), ([0, 2, 3], 5.0)])
   monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: next(solutions))
 
-  path, cost, _, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 8, aco_global_best_patience=2)
+  path, cost, _, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 8, global_best_patience=2)
 
   assert (path, cost, epochs) == ([0, 1, 3], 2.0, 5)
 
@@ -352,7 +305,7 @@ def test_aco_no_improvement_stops_after_configured_patience(monkeypatch):
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
   monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: ([0, 1, 3], 2.0))
 
-  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 10, aco_global_best_patience=3)
+  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 10, global_best_patience=3)
 
   assert epochs == 4
 
@@ -361,20 +314,20 @@ def test_aco_patience_cannot_stop_before_epoch_two(monkeypatch):
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
   monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: ([0, 1, 3], 2.0))
 
-  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 5, aco_global_best_patience=1)
+  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 5, global_best_patience=1)
 
   assert epochs == 2
 
 
-def test_aco_no_finite_route_runs_until_max_epochs(monkeypatch):
+def test_aco_no_finite_route_stops_when_patience_is_exhausted(monkeypatch):
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
   monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: (None, np.inf))
 
-  path, cost, _, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 4, aco_global_best_patience=1)
+  path, cost, _, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 4, global_best_patience=1)
 
   assert path is None
   assert np.isinf(cost)
-  assert epochs == 4
+  assert epochs == 1
 
 
 def test_aco_callback_observes_stopping_epoch_before_break(monkeypatch):
@@ -382,9 +335,7 @@ def test_aco_callback_observes_stopping_epoch_before_break(monkeypatch):
   monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: ([0, 1, 3], 2.0))
   observations = []
 
-  *_, epochs = module.ACO(
-    GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 5, aco_global_best_patience=1, epoch_callback=observations.append
-  )
+  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 5, global_best_patience=1, epoch_callback=observations.append)
 
   assert epochs == 2
   assert [observation['epoch'] for observation in observations] == [1, 2]
@@ -396,7 +347,7 @@ def test_aco_rejects_invalid_global_best_patience(patience):
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
 
   with pytest.raises(ValueError, match='positive integer'):
-    module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 2, aco_global_best_patience=patience)
+    module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 2, global_best_patience=patience)
 
 
 def test_acs_updates_selected_edge_immediately_toward_tau0(monkeypatch):
@@ -410,6 +361,19 @@ def test_acs_updates_selected_edge_immediately_toward_tau0(monkeypatch):
   assert pheromones[0][0] == pytest.approx(0.6)
   assert pheromones[1][0] == pytest.approx(0.6)
   assert pheromones[0][1] == pytest.approx(1.0)
+
+
+def test_acs_roulette_uses_zero_based_second_neighbor(monkeypatch):
+  module = importlib.import_module('src.scripts.ant_colony_system.ant_solution_ACS')
+  graph = {'node_index': {0, 1, 2}, 'connections': {0: [1, 2], 1: [], 2: []}, 'weights': {0: [1.0, 2.0], 1: [], 2: []}, 'edge_types': {0: ['walk', 'walk'], 1: [], 2: []}}
+  pheromones = {0: np.array([1.0, 1.0]), 1: np.array([]), 2: np.array([])}
+  monkeypatch.setattr(module.np.random, 'rand', lambda: 1.0)
+  monkeypatch.setattr(module.np.random, 'choice', lambda class_count, p: 1)
+
+  path, cost = ant_solution_ACS(graph, pheromones, 0, 2, 0.0, 1.0, 1.0)
+
+  assert path == [0, 2]
+  assert cost == pytest.approx(2.0)
 
 
 def test_acs_global_update_only_touches_retained_global_best(monkeypatch):
@@ -474,24 +438,10 @@ def test_acs_returns_best_route_seen_across_epochs(monkeypatch):
   assert (path, cost, epochs) == ([0, 1, 3], 2.0, 2)
 
 
-@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
-def test_path_consensus_cannot_stop_after_epoch_one(monkeypatch, module_name, colony_name, ant_name, arguments):
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), PATIENCE_ALGORITHMS)
+def test_all_variants_stop_after_strict_global_best_patience(monkeypatch, module_name, colony_name, ant_name, arguments):
   module = importlib.import_module(module_name)
-  monkeypatch.setattr(module, ant_name, lambda *args: ([0, 1, 3], 2.0))
-  if colony_name == 'ABW':
-    arguments = (*arguments, 1, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
-  else:
-    arguments = (*arguments, 1)
-
-  *_, epochs = getattr(module, colony_name)(GRAPH, *arguments, path_consensus_threshold=0.85)
-
-  assert epochs == 1
-
-
-@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
-def test_consensus_stops_only_after_stable_iteration_best_cost(monkeypatch, module_name, colony_name, ant_name, arguments):
-  module = importlib.import_module(module_name)
-  solutions = iter([([0, 1, 3], 3.0), ([0, 1, 3], 2.0), ([0, 1, 3], 2.0)])
+  solutions = iter([([0, 1, 3], 3.0), ([0, 1, 3], 2.0), ([0, 1, 3], 2.0), ([0, 1, 3], 2.0)])
   monkeypatch.setattr(module, ant_name, lambda *args: next(solutions))
   if colony_name == 'ABW':
     arguments = (*arguments, 5, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
@@ -500,42 +450,40 @@ def test_consensus_stops_only_after_stable_iteration_best_cost(monkeypatch, modu
     arguments = (*arguments, 5)
     kwargs = {}
 
-  *_, epochs = getattr(module, colony_name)(GRAPH, *arguments, path_consensus_threshold=0.85, **kwargs)
+  *_, epochs = getattr(module, colony_name)(GRAPH, *arguments, global_best_patience=2, **kwargs)
 
-  assert epochs == 3
+  assert epochs == 4
 
 
-@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
-def test_legacy_terminal_stagnation_argument_does_not_change_consensus_termination(monkeypatch, module_name, colony_name, ant_name, arguments):
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments', 'kwargs'), MAX_EPOCH_ALGORITHMS)
+def test_all_variants_stop_at_max_epochs_while_global_best_keeps_improving(monkeypatch, module_name, colony_name, ant_name, arguments, kwargs):
   module = importlib.import_module(module_name)
+  observed_costs = []
+  improving_costs = iter([3.0, 2.0, 1.0])
 
-  def run_algorithm(**kwargs):
-    solutions = iter([([0, 1, 3], 2.0), ([0, 2, 3], 5.0), ([0, 2, 3], 5.0)])
-    monkeypatch.setattr(module, ant_name, lambda *args: next(solutions))
-    if colony_name == 'ABW':
-      call_arguments = (*arguments, 5, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
-      kwargs.update(mutation_probability=0, restart_stagnation=0)
-    else:
-      call_arguments = (*arguments, 5)
-    return getattr(module, colony_name)(GRAPH, *call_arguments, path_consensus_threshold=0.85, **kwargs)
+  def improving_solution(*args):
+    cost = next(improving_costs)
+    observed_costs.append(cost)
+    return [0, 1, 3], cost
 
-  baseline_path, baseline_cost, _, baseline_epochs = run_algorithm()
-  legacy_path, legacy_cost, _, legacy_epochs = run_algorithm(stagnation_epochs=1)
+  monkeypatch.setattr(module, ant_name, improving_solution)
 
-  assert (legacy_path, legacy_cost, legacy_epochs) == (baseline_path, baseline_cost, baseline_epochs)
-  assert legacy_epochs == 3
+  path, cost, _, epochs = getattr(module, colony_name)(GRAPH, *arguments, global_best_patience=1, **kwargs)
+
+  assert (path, cost, epochs) == ([0, 1, 3], 1.0, 3)
+  assert observed_costs == [3.0, 2.0, 1.0]
 
 
-@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
-def test_orchestrators_reject_invalid_path_consensus_threshold(monkeypatch, module_name, colony_name, ant_name, arguments):
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), PATIENCE_ALGORITHMS)
+def test_all_variants_reject_invalid_global_best_patience(monkeypatch, module_name, colony_name, ant_name, arguments):
   module = importlib.import_module(module_name)
   if colony_name == 'ABW':
     arguments = (*arguments, 1, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
   else:
     arguments = (*arguments, 1)
 
-  with pytest.raises(ValueError, match=r'\(0, 1\]'):
-    getattr(module, colony_name)(GRAPH, *arguments, path_consensus_threshold=0)
+  with pytest.raises(ValueError, match='positive integer'):
+    getattr(module, colony_name)(GRAPH, *arguments, global_best_patience=0)
 
 
 def test_bwas_uses_finite_worst_and_keeps_global_best(monkeypatch):
@@ -681,22 +629,20 @@ def test_seeded_orchestrators_run_end_to_end_on_multimodal_square_graph(monkeypa
   assert all(pheromone != pytest.approx(initial_levels[0]) for pheromone in route_pheromones)
 
 
-@pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)
-def test_orchestrators_reject_merged_graph_without_edge_types(run_algorithm):
+def test_preflight_rejects_merged_graph_without_edge_types():
   graph = _multimodal_square_graph()
   graph.pop('edge_types')
 
   with pytest.raises(ValueError, match='edge_types'):
-    run_algorithm(graph, 0, 2)
+    prepare_routing_problem(graph, 0, 2)
 
 
-@pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)
-def test_trivial_routes_reject_tagged_bus_graph_without_edge_types(run_algorithm):
+def test_preflight_rejects_tagged_bus_graph_without_edge_types():
   bus_node = 'bus:line:outbound:0'
   graph = {'node_index': {bus_node}, 'connections': {bus_node: []}, 'weights': {bus_node: []}, 'buses': []}
 
   with pytest.raises(ValueError, match='edge_types'):
-    run_algorithm(graph, bus_node, bus_node)
+    prepare_routing_problem(graph, bus_node, bus_node)
 
 
 @pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)

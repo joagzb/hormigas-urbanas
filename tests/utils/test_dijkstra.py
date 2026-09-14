@@ -1,4 +1,4 @@
-from src.scripts.utils.route_finder import dijkstra
+from src.scripts.utils.dijkstra import dijkstra
 
 
 def test_dijkstra_finds_path_on_linear_chain():

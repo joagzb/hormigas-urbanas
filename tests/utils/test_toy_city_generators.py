@@ -4,9 +4,14 @@ import sys
 
 import pytest
 
-from src.scripts.utils.toy_city_generators import _compute_route_cost, _route_recommendation, generate_bus_line_square_city, generate_square_city_graph
+from src.scripts.utils.dijkstra import dijkstra
 from src.scripts.utils.generators import merge_bus_and_map_graph
-from src.scripts.utils.route_finder import dijkstra
+from src.scripts.utils.toy_city_generators import _compute_route_cost, _route_recommendation, generate_bus_line_square_city, generate_square_city_graph
+
+
+def test_legacy_module_reexports_generators_from_central_utility_module():
+  assert generate_square_city_graph.__module__ == 'src.scripts.utils.generators'
+  assert generate_bus_line_square_city.__module__ == 'src.scripts.utils.generators'
 
 
 def test_route_recommendation_compares_numeric_costs_and_handles_missing_routes():

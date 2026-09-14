@@ -1,4 +1,4 @@
-def notify_stage(callback, *, epoch, stage, pheromones, iteration_best_path, iteration_best_cost, global_best_path, global_best_cost, restarted=False):
+def record_stage_data(callback, *, epoch, stage, pheromones, iteration_best_path, iteration_best_cost, global_best_path, global_best_cost, restarted=False):
   """Send one independent post-update observation when a callback exists."""
   if callback is None:
     return
@@ -18,4 +18,6 @@ def notify_stage(callback, *, epoch, stage, pheromones, iteration_best_path, ite
 
 
 def _copy_path(path):
-  return None if path is None else path.copy()
+  if path is None:
+    return None
+  return path.copy()

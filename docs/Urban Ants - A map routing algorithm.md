@@ -100,11 +100,7 @@ Two extreme cases help to understand this balance:
 - If **heuristic influence is set to zero**, the algorithm uses only pheromones. This can cause **fast stagnation**, where all ants follow the same path too early.
 
 ### **Initial setup**
-The standard Ant System serves as the foundational variant. Initial pheromone concentrations $\tau_0$ are set uniformly across all edges $E$ based on a deterministic depth-first/backtracking baseline route cost $L_{gb}$:
-
-$$\tau_0 = \frac{m}{L_{gb}}$$
-
-where $m = \vert{}V\vert{}$ represents the total number of vertices or artificial ants.
+The standard Ant System serves as the foundational variant. Initial pheromone concentrations are set uniformly across all edges from an automatic baseline derived from a deterministic depth-first/backtracking reference route. Consult the algorithm references for the theoretical initialization formulas used by each variant.
 
 ### **Iterative solution Overview**
 so, at each iteration:
@@ -117,7 +113,7 @@ so, at each iteration:
 
 ### **Termination**
 
-Simple ACO stops after 10 consecutive completed epochs without a strict finite global-best cost improvement; the first finite best and every later strict improvement reset its configurable patience counter. ACS and BWAS stop only after a completed epoch when both conditions hold: at least $\lceil t n_f \rceil$ of the $n_f$ finite ants completed the same exact route, and the finite iteration-best cost is exactly unchanged from the preceding epoch. Their configured threshold is $t = 0.85$. Lost or infinite ants are excluded from $n_f$, while equal-cost alternative routes remain distinct. No algorithm can stop before epoch 2, `max_epochs` remains the hard cap, and Dijkstra is used only as an external reference.
+ACO, ACS, and BWAS share the same termination policy: stop after 10 consecutive completed epochs without a strict finite global-best cost improvement, or when `max_epochs` is reached, whichever occurs first. The first finite best and every later strict improvement reset the patience counter. Dijkstra is used only as an external reference.
 
 ### **Global Pheromone Deposit Formula**
 Once all $m$ ants complete their complete paths, graph-wide evaporation occurs across all edges $(i, j) \in E$:
@@ -170,7 +166,7 @@ ACS combines an exploitation-biased transition rule with local trail updates dur
 
 ### Initialization
 
-All edges are initialized to a baseline trail intensity $\tau_0 = \frac{1}{\vert{}V\vert{} \cdot L_{gb}}$.
+All edges receive the automatic baseline trail intensity derived from the deterministic reference route. Consult the algorithm references for the theoretical initialization formula.
 
 Pseudo-Random Proportional Rule
 
@@ -230,7 +226,7 @@ $$\sigma = \frac{i_{current} - i_{restart}}{i_{max}}$$
 
 ## Hard Restart Mechanism
 
-If $T^{gb}$ fails to improve for 8 iterations, all matrix entries are reset to $\tau_0$, clearing accumulated bias while preserving the best score found. This is a pheromone-diversity restart, not a terminal condition; BWAS retains the same consensus and stable-cost termination rule as ACS.
+If $T^{gb}$ fails to improve for 8 iterations, all matrix entries are reset to $\tau_0$, clearing accumulated bias while preserving the best score found. This pheromone-diversity restart is separate from, and does not reset, the shared global-best patience termination policy.
 
 # 🚦 Project Status and Updates
 

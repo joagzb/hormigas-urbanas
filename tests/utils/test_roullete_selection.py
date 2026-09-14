@@ -12,9 +12,9 @@ def test_roulette_selection_picks_valid_index():
   probabilities = [0.5, 0.25, 0.25]
   assert sum(probabilities) == 1.0
 
-  winner_index_1_based = roulette_wheel_selection(probabilities)
-  assert 1 <= winner_index_1_based <= len(probabilities)
-  assert probabilities[winner_index_1_based - 1] > 0
+  winner_index = roulette_wheel_selection(probabilities)
+  assert 0 <= winner_index < len(probabilities)
+  assert probabilities[winner_index] > 0
 
 
 def test_roulette_selection_zero_prob_never_selected():
@@ -22,5 +22,5 @@ def test_roulette_selection_zero_prob_never_selected():
   np.random.seed(0)
   probabilities = [0.0, 1.0, 0.0]
   for _ in range(200):
-    winner_index_1_based = roulette_wheel_selection(probabilities)
-    assert winner_index_1_based == 2
+    winner_index = roulette_wheel_selection(probabilities)
+    assert winner_index == 1

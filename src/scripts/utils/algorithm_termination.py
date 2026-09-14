@@ -1,26 +1,34 @@
 import math
-from collections import Counter
-from numbers import Real
+from numbers import Integral
 
 
-def validate_path_consensus_threshold(path_consensus_threshold):
-  """Validate and return a path-consensus threshold in ``(0, 1]``."""
-  if isinstance(path_consensus_threshold, bool) or not isinstance(path_consensus_threshold, Real) or not 0 < path_consensus_threshold <= 1:
-    raise ValueError('path_consensus_threshold must be a number in (0, 1]')
-  return path_consensus_threshold
+def validate_global_best(global_best_patience):
+  """Return a positive integer global-best stagnation limit.
+
+  The value counts consecutive completed epochs without a strict improvement
+  to a finite global-best cost. Booleans are rejected even though they are
+  integer subclasses in Python.
+  """
+  if isinstance(global_best_patience, bool) or not isinstance(global_best_patience, Integral) or global_best_patience <= 0:
+    raise ValueError('global_best_patience must be a positive integer')
+  return global_best_patience
 
 
-def has_path_consensus(routes, costs, path_consensus_threshold):
-  """Return whether enough finite ants completed the same exact route."""
-  threshold = validate_path_consensus_threshold(path_consensus_threshold)
-  finite_routes = [tuple(route) for route, cost in zip(routes, costs) if route is not None and math.isfinite(cost)]
-  if not finite_routes:
-    return False
-  consensus_count = Counter(finite_routes).most_common(1)[0][1]
-  required_count = math.ceil(threshold * len(finite_routes))
-  return consensus_count >= required_count
+def update_global_best(global_best_cost, candidate_cost, epochs_without_improvement):
+  """Update strict global-best improvement and consecutive stagnation state.
+
+  Inputs are the retained best cost, the current epoch's best cost, and the
+  previous consecutive non-improvement count. The returned tuple contains an
+  improvement flag and the next count. Infinite candidates never improve.
+  """
+  improved = math.isfinite(candidate_cost) and candidate_cost < global_best_cost
+  if improved:
+    next_epochs_without_improvement = 0
+  else:
+    next_epochs_without_improvement = epochs_without_improvement + 1
+  return improved, next_epochs_without_improvement
 
 
-def has_stable_iteration_best_cost(previous_cost, current_cost):
-  """Return whether consecutive finite iteration-best costs are exactly equal."""
-  return previous_cost is not None and math.isfinite(previous_cost) and math.isfinite(current_cost) and previous_cost == current_cost
+def global_best_patience_exhausted(global_best_patience, epochs_without_improvement):
+  """Return whether the validated strict-improvement patience is exhausted."""
+  return epochs_without_improvement >= validate_global_best(global_best_patience)

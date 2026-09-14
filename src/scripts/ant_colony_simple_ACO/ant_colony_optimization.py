@@ -1,10 +1,10 @@
-from numbers import Integral
 from time import time
 
 import numpy as np
 
-from ..utils.algorithm_observer import notify_stage
-from ..utils.generators import deterministic_route_cost, generate_pheromone_map, validate_graph
+from ..utils.algorithm_observer import record_stage_data
+from ..utils.algorithm_termination import update_global_best, validate_global_best
+from ..utils.generators import deterministic_route_cost, generate_pheromone_map
 from .ant_solution_ACO import ant_solution_ACO
 
 
@@ -19,7 +19,7 @@ def ACO(
   pheromone_weight,
   max_epochs: int = 500,
   *,
-  aco_global_best_patience=10,
+  global_best_patience=10,
   epoch_callback=None,
 ):
   """Find the best route seen by the Ant Colony Optimization algorithm.
@@ -27,8 +27,8 @@ def ACO(
   Parameters:
   -----------
   graph_map : dict
-      Graph containing aligned ``connections`` and ``weights`` mappings and a
-      ``node_index`` collection.
+      Preflighted graph containing opaque IDs and aligned ``connections``,
+      ``weights``, and ``edge_types`` mappings.
   start_node : hashable
       The opaque starting node ID (ant hill).
   end_node : hashable
@@ -38,17 +38,18 @@ def ACO(
   evaporation_rate : float
       The pheromone evaporation rate applied after each epoch.
   initial_pheromone_lvl : float or None
-      Initial pheromone level. If ``None``, tau0 is derived as ``|V| / Lgb``
-      from a deterministic baseline route.
+      Initial pheromone level. If ``None``, an automatic baseline is derived
+      from a deterministic reference route. Consult the algorithm
+      documentation for the theoretical initialization formula.
   heuristic_weight : float
       Legacy positional name for alpha, the pheromone exponent.
   pheromone_weight : float
       Legacy positional name for beta, the inverse-cost exponent.
   max_epochs : int
       Maximum number of epochs to run.
-  aco_global_best_patience : int
+  global_best_patience : int
       Consecutive completed epochs without strict finite global-best
-      improvement before stopping. The earliest possible stop is epoch 2.
+      improvement before stopping.
   epoch_callback : callable or None
       Optional observer called after each completed epoch with the final
       ``pheromone_update`` observation.
@@ -65,20 +66,16 @@ def ACO(
       Number of completed epochs.
   """
   start_time = time()
-  if isinstance(aco_global_best_patience, bool) or not isinstance(aco_global_best_patience, Integral) or aco_global_best_patience <= 0:
-    raise ValueError('aco_global_best_patience must be a positive integer')
-  require_edge_types = bool(graph_map.get('buses')) or any(isinstance(node, str) and node.startswith('bus:') for node in graph_map.get('node_index', []))
-  validate_graph(graph_map, require_edge_types=require_edge_types)
-  if start_node == end_node:
-    if start_node in graph_map['node_index']:
-      return [start_node], 0.0, time() - start_time, 0
-    return None, np.inf, time() - start_time, 0
+  validate_global_best(global_best_patience)
 
   if initial_pheromone_lvl is None:
     baseline_cost = deterministic_route_cost(graph_map, start_node, end_node)
     if not np.isfinite(baseline_cost):
       return None, np.inf, time() - start_time, 0
-    tau0 = 1.0 if baseline_cost == 0 else len(graph_map['node_index']) / baseline_cost
+    if baseline_cost == 0:
+      tau0 = 1.0
+    else:
+      tau0 = len(graph_map['node_index']) / baseline_cost
   else:
     tau0 = initial_pheromone_lvl
 
@@ -94,17 +91,11 @@ def ACO(
 
   while epochs < max_epochs:
     # Construct routes and retain the best route
-    global_best_improved = False
     for ant in range(ants_number):
       route, distance = ant_solution_ACO(graph_map, pheromone_graph, start_node, end_node, alpha, beta)
 
       routes[ant] = route
       distances[ant] = distance
-
-      if np.isfinite(distance) and distance < best_cost:
-        best_path = route.copy()
-        best_cost = distance
-        global_best_improved = True
 
     finite_distances = distances[np.isfinite(distances)]
     if finite_distances.size:
@@ -115,6 +106,11 @@ def ACO(
       iteration_best_path = None
       iteration_best_cost = np.inf
 
+    improved, epochs_without_global_best_improvement = update_global_best(best_cost, iteration_best_cost, epochs_without_global_best_improvement)
+    if improved:
+      best_path = iteration_best_path.copy()
+      best_cost = iteration_best_cost
+
     # Global pheromone evaporation
     for pheromones in pheromone_graph.values():
       pheromones *= 1 - evaporation_rate
@@ -124,18 +120,16 @@ def ACO(
       if not np.isfinite(distance):
         continue
 
-      deposit = 0.0 if distance == 0 else 1 / distance
+      if distance == 0:
+        deposit = 0.0
+      else:
+        deposit = 1 / distance
       for current_node, next_node in zip(route, route[1:]):
         edge_index = graph_map['connections'][current_node].index(next_node)
         pheromone_graph[current_node][edge_index] += deposit
     epochs += 1
 
-    if global_best_improved:
-      epochs_without_global_best_improvement = 0
-    else:
-      epochs_without_global_best_improvement += 1
-
-    notify_stage(
+    record_stage_data(
       epoch_callback,
       epoch=epochs,
       stage='pheromone_update',
@@ -146,7 +140,7 @@ def ACO(
       global_best_cost=best_cost,
     )
 
-    if epochs >= 2 and np.isfinite(best_cost) and epochs_without_global_best_improvement >= aco_global_best_patience:
+    if epochs_without_global_best_improvement >= validate_global_best(global_best_patience):
       break
 
   return best_path, best_cost, time() - start_time, epochs

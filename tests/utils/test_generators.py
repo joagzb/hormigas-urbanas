@@ -3,8 +3,8 @@ import copy
 import numpy as np
 import pytest
 
-from src.scripts.utils.generators import deterministic_route_cost, merge_bus_and_map_graph, generate_pheromone_map, validate_graph
-from src.scripts.utils.route_finder import dijkstra
+from src.scripts.utils.dijkstra import dijkstra
+from src.scripts.utils.generators import deterministic_route_cost, generate_pheromone_map, merge_bus_and_map_graph, validate_graph
 
 
 def _map_graph():

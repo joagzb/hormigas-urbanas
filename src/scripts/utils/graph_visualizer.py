@@ -86,7 +86,13 @@ def _graph_history_header(graph_dict, edges, nodes):
 
 
 class PheromoneHistoryWriter:
-  """Write one strict JSON Lines record per final post-update epoch."""
+  """Write aligned final post-update epochs to a caller-selected JSONL path.
+
+  The graph may contain opaque mixed node IDs and parallel directed edges;
+  records encode both through stable graph-relative indices. Construction
+  creates the target parent directory and truncates the file. Calls append one
+  complete epoch and reject misaligned pheromones or paths outside the graph.
+  """
 
   def __init__(self, graph_dict: dict, history_path):
     self.edge_order = stable_edge_order(graph_dict)
@@ -138,6 +144,44 @@ class PheromoneHistoryWriter:
       return [self.node_positions[node] for node in path]
     except (KeyError, TypeError) as error:
       raise ValueError('Observed paths must contain graph nodes only') from error
+
+
+class ExperimentOutputWriter:
+  """Own one algorithm's generated history and animation under ``cwd/tmp``.
+
+  ``graph_dict`` supplies stable edge and opaque-node alignment, while ``name``
+  becomes the generated file prefix. Construction creates ``Path.cwd().parent/tmp``
+  and a private ``PheromoneHistoryWriter``. Calling the instance records an
+  epoch; ``write_animation`` loads that history and writes the matching HTML.
+  """
+
+  def __init__(self, graph_dict: dict, name: str):
+    if not name or any(character not in 'abcdefghijklmnopqrstuvwxyz0123456789_-' for character in name):
+      raise ValueError('output name must contain lowercase letters, numbers, underscores, or hyphens only')
+    self.graph_dict = graph_dict
+    self.name = name
+    self.output_directory = Path.cwd().parent / 'tmp'
+    self.output_directory.mkdir(parents=True, exist_ok=True)
+    self.history_path = self.output_directory / f'{name}_pheromone_history.jsonl'
+    self.html_path = self.output_directory / f'{name}_pheromone_animation.html'
+    self._history_writer = PheromoneHistoryWriter(graph_dict, self.history_path)
+
+  def __call__(self, observation):
+    """Append one final algorithm observation to this output's JSONL history."""
+    self._history_writer(observation)
+
+  def write_animation(self, *, reference_path=None, title='Pheromone evolution', stride=1, max_frames=100, pheromone_bins=6):
+    """Build and write the configured HTML animation, returning its path.
+
+    ``reference_path`` may contain the graph's opaque IDs. Sampling arguments
+    are forwarded to the validated history loader. This method performs file
+    I/O but never displays the Plotly figure inline.
+    """
+    figure = draw_pheromone_history(
+      self.graph_dict, self.history_path, reference_path=reference_path, title=title, stride=stride, max_frames=max_frames, pheromone_bins=pheromone_bins, show=False
+    )
+    figure.write_html(self.html_path)
+    return self.html_path
 
 
 def _read_json_line(line, line_number):

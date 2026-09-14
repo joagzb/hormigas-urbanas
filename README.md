@@ -32,9 +32,9 @@ More details about the methodology can be found at:
 
 ## Notebook experiment
 
-Open `src/TPF.ipynb` from either the repository root or `src/`. The notebook locates the repository root before importing project modules or creating outputs. It takes `ants`, `epomax`, ACO global-best patience, and the ACS/BWAS path-consensus threshold from `src/configuration/algorithm_settings.py`; its default experiment keeps the 10x10 graph with 20 ants, 100 maximum epochs, 10-epoch ACO patience, and an 85% ACS/BWAS threshold.
+Open `src/TPF.ipynb` from either the repository root or `src/` after activating the project environment. The notebook does not rewrite import or output roots. It takes `ants`, `epomax`, and shared global-best patience from `src/configuration/algorithm_settings.py`; the default experiment uses a 10x10 graph, 20 ants, 100 maximum epochs, and 10-epoch patience.
 
-Plotly figures are not displayed inline. Each algorithm records bounded JSONL history and writes one interactive animation to the repository `tmp/` directory: `aco_pheromone_animation.html`, `acs_pheromone_animation.html`, and `bwas_pheromone_animation.html`. The notebook prints each generated HTML path plus separate algorithm/history and HTML build/write timings.
+Plotly figures are not displayed inline. `ExperimentOutputWriter` creates `<working_directory>/tmp`, records each algorithm's JSONL history, and writes its interactive animation there. The notebook prints each generated HTML path plus separate algorithm/history and HTML build/write timings.
 
 ## Graph visualization
 
@@ -42,22 +42,22 @@ Given a validated `graph` dictionary, valid `start_node` and `end_node` IDs, and
 
 ```python
 from src.scripts.ant_colony_simple_ACO.ant_colony_optimization import ACO
-from src.scripts.utils.graph_visualizer import PheromoneHistoryWriter, draw_pheromone_history
-from src.scripts.utils.route_finder import dijkstra
+from src.scripts.main import prepare_routing_problem
+from src.scripts.utils.graph_visualizer import ExperimentOutputWriter
+from src.scripts.utils.dijkstra import dijkstra
 
-reference_path = dijkstra(graph, start_node, end_node)
-history_path = 'tmp/aco_pheromone_history.jsonl'
-history_writer = PheromoneHistoryWriter(graph, history_path)
-best_path, best_cost, elapsed, epochs = ACO(graph, start_node, end_node, 20, 0.1, None, 1.0, 2.0, epoch_callback=history_writer)
-figure = draw_pheromone_history(graph, history_path, reference_path=reference_path, stride=5, max_frames=60, show=False)
-figure.write_html('tmp/pheromone_animation.html')
+problem = prepare_routing_problem(graph, start_node, end_node)
+reference_path = dijkstra(problem.graph, start_node, end_node)
+output = ExperimentOutputWriter(problem.graph, 'aco')
+best_path, best_cost, elapsed, epochs = problem.run(ACO, 20, 0.1, None, 1.0, 2.0, global_best_patience=10, epoch_callback=output)
+html_path = output.write_animation(reference_path=reference_path)
 ```
 
 `epoch_callback` is an optional keyword-only algorithm argument and receives one observation dictionary per completed epoch. It observes the final `pheromone_update` state only after every pheromone mutation for that epoch has finished. For BWAS this includes worst-path penalties, mutation, floor enforcement, and any restart, so the saved state is the graph used by the next epoch.
 
-Simple ACO stops after 10 consecutive completed epochs without a strict finite global-best cost improvement, configurable with `aco_global_best_patience`; the first finite best and every later strict improvement reset the counter. It cannot stop before epoch 2. When derived pheromone initialization (`initial_pheromone_lvl=None`) finds no finite deterministic baseline route, ACO returns safely with no route at epoch 0 because it cannot derive a meaningful initial pheromone level; otherwise `max_epochs` remains its hard cap. ACS and BWAS may stop after epoch 2 when at least `ceil(path_consensus_threshold * finite_ant_count)` finite ants completed the same exact route and the finite iteration-best cost is exactly unchanged from the preceding epoch. Lost ants are excluded from the denominator, equal-cost alternative routes are distinct, and `max_epochs` remains every algorithm's hard cap. Dijkstra is an external reference, not a termination target. BWAS can still restart pheromones after configured non-improving epochs to restore diversity while preserving its global best; the restart does not terminate the search.
+ACO, ACS, and BWAS stop after 10 consecutive completed epochs without a strict global-best cost improvement, configurable with `global_best_patience`, or at `max_epochs`. The first finite best and every later strict improvement reset the counter. When automatic pheromone initialization cannot derive a finite deterministic baseline route, an algorithm returns safely at epoch 0. The baseline is used only for each variant's tau0 formula; Dijkstra remains an external reference and ant costs remain sums of original aligned edge weights. BWAS can restart pheromones after its separately configured non-improving interval to restore diversity while retaining its global best; a restart is not termination.
 
-`PheromoneHistoryWriter` truncates its target when created, writes a versioned header, then appends one strict JSON record per epoch. Edges use stable `(source, adjacency_index)` order and routes use graph-relative node indices, so directed/parallel edges and opaque mixed IDs remain aligned without pickle or `eval`. Loading validates the graph fingerprint and streams the file while retaining the first and final frames within `max_frames`; use the same graph instance or an exactly equivalent graph for recording and drawing. The animation shows a static structural-edge backdrop followed by the Dijkstra reference route, global-best-found route, and nodes. Edges expose no hover metadata or legend entry, and iteration appears only in the title and slider. Plotly HTML exports do not require Kaleido.
+`ExperimentOutputWriter` owns the generated paths and delegates strict JSONL recording to `PheromoneHistoryWriter`. Edges use stable `(source, adjacency_index)` order and routes use graph-relative node indices, so directed/parallel edges and opaque mixed IDs remain aligned without pickle or `eval`. Loading validates the graph fingerprint and streams the file while retaining the first and final frames within `max_frames`; use the same graph instance or an exactly equivalent graph for recording and drawing. The default animation stride adapts to the completed run length: runs through 100 iterations show every frame, while longer runs progressively sample up to a maximum stride of 10. The animation shows a static structural-edge backdrop followed by the Dijkstra reference route, global-best-found route, and nodes. Edges expose no hover metadata or legend entry, and iteration appears only in the title and slider. Plotly HTML exports do not require Kaleido.
 
 ## Running tests
 
