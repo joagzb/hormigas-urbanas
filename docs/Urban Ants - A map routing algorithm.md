@@ -115,6 +115,10 @@ so, at each iteration:
 4. Pheromone evaporates over time.
 5. The search gradually focuses on the **most promising regions**.
 
+### **Termination**
+
+Simple ACO stops after 10 consecutive completed epochs without a strict finite global-best cost improvement; the first finite best and every later strict improvement reset its configurable patience counter. ACS and BWAS stop only after a completed epoch when both conditions hold: at least $\lceil t n_f \rceil$ of the $n_f$ finite ants completed the same exact route, and the finite iteration-best cost is exactly unchanged from the preceding epoch. Their configured threshold is $t = 0.85$. Lost or infinite ants are excluded from $n_f$, while equal-cost alternative routes remain distinct. No algorithm can stop before epoch 2, `max_epochs` remains the hard cap, and Dijkstra is used only as an external reference.
+
 ### **Global Pheromone Deposit Formula**
 Once all $m$ ants complete their complete paths, graph-wide evaporation occurs across all edges $(i, j) \in E$:
 
@@ -226,7 +230,7 @@ $$\sigma = \frac{i_{current} - i_{restart}}{i_{max}}$$
 
 ## Hard Restart Mechanism
 
-If $T^{gb}$ fails to improve for 8 iterations, all matrix entries are reset to $\tau_0$, clearing accumulated bias while preserving the best score found. The experiment stops BWAS after 50 non-improving iterations in total; this stopping counter is not reset by pheromone restarts. ACS stops after 25 non-improving iterations. Non-positive stopping limits disable early termination.
+If $T^{gb}$ fails to improve for 8 iterations, all matrix entries are reset to $\tau_0$, clearing accumulated bias while preserving the best score found. This is a pheromone-diversity restart, not a terminal condition; BWAS retains the same consensus and stable-cost termination rule as ACS.
 
 # 🚦 Project Status and Updates
 

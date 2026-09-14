@@ -73,6 +73,16 @@ def _run_bwas(graph, start_node, end_node):
 
 ALGORITHM_RUNNERS = [_run_aco, _run_acs, _run_bwas]
 
+CONSENSUS_ALGORITHMS = [
+  (
+    'src.scripts.ant_colony_system.ant_colony_system',
+    'ACS',
+    'ant_solution_ACS',
+    (START_NODE, END_NODE, 1, EVAPORATION_RATE, LOCAL_EVAPORATION_RATE, TRANSITION_PROBABILITY, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT),
+  ),
+  ('src.scripts.ant_best_worst.ant_colony_best_worst', 'ABW', 'ant_solution_best_worst', (START_NODE, END_NODE, 1, EVAPORATION_RATE)),
+]
+
 
 def _multimodal_square_graph():
   map_graph = generate_square_city_graph(2, fixed_weight=10.0)
@@ -273,6 +283,42 @@ def test_transitions_preserve_opaque_bus_node_ids(monkeypatch, ant_solution):
   assert cost == pytest.approx(1.7)
 
 
+@pytest.mark.parametrize('ant_solution', [ant_solution_ACO, ant_solution_ACS, ant_solution_best_worst])
+def test_mixed_node_ids_do_not_allow_route_revisits(monkeypatch, ant_solution):
+  bus_node = 'bus:cycle:outbound:0'
+  graph = {
+    'node_index': {0, bus_node, 1, 2},
+    'connections': {0: [bus_node], bus_node: [0, 1], 1: [bus_node, 2], 2: []},
+    'weights': {0: [1.0], bus_node: [0.1, 1.0], 1: [0.1, 1.0], 2: []},
+    'edge_types': {0: ['board'], bus_node: ['alight', 'ride'], 1: ['board', 'walk'], 2: []},
+  }
+  pheromones = {node: np.ones(len(connections)) for node, connections in graph['connections'].items()}
+  selection_count = 0
+
+  def select_first(probabilities):
+    nonlocal selection_count
+    selection_count += 1
+    if selection_count > len(graph['node_index']):
+      raise RuntimeError('route construction exceeded graph size')
+    return 1
+
+  module = importlib.import_module(ant_solution.__module__)
+  monkeypatch.setattr(module, 'roulette_wheel_selection', select_first)
+  arguments = [graph, pheromones, 0, 2]
+  if ant_solution is ant_solution_ACS:
+    monkeypatch.setattr(module.np.random, 'rand', lambda: 1.0)
+    arguments.append(0.0)
+  arguments.extend([1.0, 1.0])
+
+  path, cost = ant_solution(*arguments)
+
+  assert path == [0, bus_node, 1, 2]
+  assert len(path) <= len(graph['node_index'])
+  assert len(path) == len(set(path))
+  aligned_cost = sum(graph['weights'][current][graph['connections'][current].index(next_node)] for current, next_node in zip(path, path[1:]))
+  assert cost == pytest.approx(aligned_cost)
+
+
 def test_aco_derives_tau0_and_retains_best_so_far(monkeypatch):
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
   generated_levels = []
@@ -290,6 +336,67 @@ def test_aco_derives_tau0_and_retains_best_so_far(monkeypatch):
 
   assert generated_levels == [2.0]  # |V| / Lgb = 4 / 2
   assert (path, cost, epochs) == ([0, 1, 3], 2.0, 2)
+
+
+def test_aco_strict_global_best_improvement_resets_patience(monkeypatch):
+  module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
+  solutions = iter([([0, 2, 3], 5.0), ([0, 2, 3], 5.0), ([0, 1, 3], 2.0), ([0, 2, 3], 5.0), ([0, 2, 3], 5.0)])
+  monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: next(solutions))
+
+  path, cost, _, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 8, aco_global_best_patience=2)
+
+  assert (path, cost, epochs) == ([0, 1, 3], 2.0, 5)
+
+
+def test_aco_no_improvement_stops_after_configured_patience(monkeypatch):
+  module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
+  monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: ([0, 1, 3], 2.0))
+
+  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 10, aco_global_best_patience=3)
+
+  assert epochs == 4
+
+
+def test_aco_patience_cannot_stop_before_epoch_two(monkeypatch):
+  module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
+  monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: ([0, 1, 3], 2.0))
+
+  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 5, aco_global_best_patience=1)
+
+  assert epochs == 2
+
+
+def test_aco_no_finite_route_runs_until_max_epochs(monkeypatch):
+  module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
+  monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: (None, np.inf))
+
+  path, cost, _, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 4, aco_global_best_patience=1)
+
+  assert path is None
+  assert np.isinf(cost)
+  assert epochs == 4
+
+
+def test_aco_callback_observes_stopping_epoch_before_break(monkeypatch):
+  module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
+  monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: ([0, 1, 3], 2.0))
+  observations = []
+
+  *_, epochs = module.ACO(
+    GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 5, aco_global_best_patience=1, epoch_callback=observations.append
+  )
+
+  assert epochs == 2
+  assert [observation['epoch'] for observation in observations] == [1, 2]
+  assert observations[-1]['stage'] == 'pheromone_update'
+
+
+@pytest.mark.parametrize('patience', [0, -1, 1.5, True])
+def test_aco_rejects_invalid_global_best_patience(patience):
+  module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
+
+  with pytest.raises(ValueError, match='positive integer'):
+    module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 2, aco_global_best_patience=patience)
 
 
 def test_acs_updates_selected_edge_immediately_toward_tau0(monkeypatch):
@@ -367,49 +474,68 @@ def test_acs_returns_best_route_seen_across_epochs(monkeypatch):
   assert (path, cost, epochs) == ([0, 1, 3], 2.0, 2)
 
 
-def test_acs_stops_after_configured_non_improving_epochs(monkeypatch):
-  module = importlib.import_module('src.scripts.ant_colony_system.ant_colony_system')
-  solutions = iter([([0, 1, 3], 2.0)] + [([0, 2, 3], 5.0)] * 3)
-  monkeypatch.setattr(module, 'ant_solution_ACS', lambda *args: next(solutions))
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
+def test_path_consensus_cannot_stop_after_epoch_one(monkeypatch, module_name, colony_name, ant_name, arguments):
+  module = importlib.import_module(module_name)
+  monkeypatch.setattr(module, ant_name, lambda *args: ([0, 1, 3], 2.0))
+  if colony_name == 'ABW':
+    arguments = (*arguments, 1, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
+  else:
+    arguments = (*arguments, 1)
 
-  path, cost, _, epochs = module.ACS(
-    GRAPH,
-    START_NODE,
-    END_NODE,
-    1,
-    EVAPORATION_RATE,
-    LOCAL_EVAPORATION_RATE,
-    TRANSITION_PROBABILITY,
-    INITIAL_PHEROMONE_LVL,
-    HEURISTIC_WEIGHT,
-    PHEROMONE_WEIGHT,
-    10,
-    stagnation_epochs=3,
-  )
+  *_, epochs = getattr(module, colony_name)(GRAPH, *arguments, path_consensus_threshold=0.85)
 
-  assert (path, cost, epochs) == ([0, 1, 3], 2.0, 4)
+  assert epochs == 1
 
 
-def test_acs_non_positive_stagnation_limit_runs_until_max_epochs(monkeypatch):
-  module = importlib.import_module('src.scripts.ant_colony_system.ant_colony_system')
-  monkeypatch.setattr(module, 'ant_solution_ACS', lambda *args: ([0, 1, 3], 2.0))
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
+def test_consensus_stops_only_after_stable_iteration_best_cost(monkeypatch, module_name, colony_name, ant_name, arguments):
+  module = importlib.import_module(module_name)
+  solutions = iter([([0, 1, 3], 3.0), ([0, 1, 3], 2.0), ([0, 1, 3], 2.0)])
+  monkeypatch.setattr(module, ant_name, lambda *args: next(solutions))
+  if colony_name == 'ABW':
+    arguments = (*arguments, 5, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
+    kwargs = {'mutation_probability': 0, 'restart_stagnation': 0}
+  else:
+    arguments = (*arguments, 5)
+    kwargs = {}
 
-  *_, epochs = module.ACS(
-    GRAPH,
-    START_NODE,
-    END_NODE,
-    1,
-    EVAPORATION_RATE,
-    LOCAL_EVAPORATION_RATE,
-    TRANSITION_PROBABILITY,
-    INITIAL_PHEROMONE_LVL,
-    HEURISTIC_WEIGHT,
-    PHEROMONE_WEIGHT,
-    3,
-    stagnation_epochs=0,
-  )
+  *_, epochs = getattr(module, colony_name)(GRAPH, *arguments, path_consensus_threshold=0.85, **kwargs)
 
   assert epochs == 3
+
+
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
+def test_legacy_terminal_stagnation_argument_does_not_change_consensus_termination(monkeypatch, module_name, colony_name, ant_name, arguments):
+  module = importlib.import_module(module_name)
+
+  def run_algorithm(**kwargs):
+    solutions = iter([([0, 1, 3], 2.0), ([0, 2, 3], 5.0), ([0, 2, 3], 5.0)])
+    monkeypatch.setattr(module, ant_name, lambda *args: next(solutions))
+    if colony_name == 'ABW':
+      call_arguments = (*arguments, 5, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
+      kwargs.update(mutation_probability=0, restart_stagnation=0)
+    else:
+      call_arguments = (*arguments, 5)
+    return getattr(module, colony_name)(GRAPH, *call_arguments, path_consensus_threshold=0.85, **kwargs)
+
+  baseline_path, baseline_cost, _, baseline_epochs = run_algorithm()
+  legacy_path, legacy_cost, _, legacy_epochs = run_algorithm(stagnation_epochs=1)
+
+  assert (legacy_path, legacy_cost, legacy_epochs) == (baseline_path, baseline_cost, baseline_epochs)
+  assert legacy_epochs == 3
+
+
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments'), CONSENSUS_ALGORITHMS)
+def test_orchestrators_reject_invalid_path_consensus_threshold(monkeypatch, module_name, colony_name, ant_name, arguments):
+  module = importlib.import_module(module_name)
+  if colony_name == 'ABW':
+    arguments = (*arguments, 1, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
+  else:
+    arguments = (*arguments, 1)
+
+  with pytest.raises(ValueError, match=r'\(0, 1\]'):
+    getattr(module, colony_name)(GRAPH, *arguments, path_consensus_threshold=0)
 
 
 def test_bwas_uses_finite_worst_and_keeps_global_best(monkeypatch):
@@ -453,61 +579,6 @@ def test_bwas_mutates_and_restarts_without_forgetting_best(monkeypatch):
   assert len(generated_maps) == 2
   assert generated_maps[0][0][1] > 0.082
   assert all(np.allclose(values, 0.125) for values in generated_maps[-1].values())
-
-
-def test_bwas_stopping_patience_does_not_reset_on_restart(monkeypatch):
-  module = importlib.import_module('src.scripts.ant_best_worst.ant_colony_best_worst')
-  generated_maps = []
-  original_generator = module.generate_pheromone_map
-
-  def capture_generator(graph, level):
-    pheromones = original_generator(graph, level)
-    generated_maps.append(pheromones)
-    return pheromones
-
-  solutions = iter([([0, 1, 3], 2.0)] + [([0, 2, 3], 5.0)] * 3)
-  monkeypatch.setattr(module, 'generate_pheromone_map', capture_generator)
-  monkeypatch.setattr(module, 'ant_solution_best_worst', lambda *args: next(solutions))
-
-  path, cost, _, epochs = module.ABW(
-    GRAPH,
-    START_NODE,
-    END_NODE,
-    1,
-    EVAPORATION_RATE,
-    10,
-    INITIAL_PHEROMONE_LVL,
-    HEURISTIC_WEIGHT,
-    PHEROMONE_WEIGHT,
-    mutation_probability=0,
-    restart_stagnation=2,
-    stagnation_epochs=3,
-  )
-
-  assert (path, cost, epochs) == ([0, 1, 3], 2.0, 4)
-  assert len(generated_maps) == 2
-
-
-def test_bwas_non_positive_stagnation_limit_runs_until_max_epochs(monkeypatch):
-  module = importlib.import_module('src.scripts.ant_best_worst.ant_colony_best_worst')
-  monkeypatch.setattr(module, 'ant_solution_best_worst', lambda *args: ([0, 1, 3], 2.0))
-
-  *_, epochs = module.ABW(
-    GRAPH,
-    START_NODE,
-    END_NODE,
-    1,
-    EVAPORATION_RATE,
-    3,
-    INITIAL_PHEROMONE_LVL,
-    HEURISTIC_WEIGHT,
-    PHEROMONE_WEIGHT,
-    mutation_probability=0,
-    restart_stagnation=0,
-    stagnation_epochs=0,
-  )
-
-  assert epochs == 3
 
 
 def test_bwas_mutation_uses_search_scaled_direction_and_preserves_f_min(monkeypatch):
@@ -643,14 +714,8 @@ def test_orchestrators_keep_plain_walking_graph_compatibility(run_algorithm):
   ('module_name', 'colony_name', 'ant_name', 'arguments', 'kwargs'),
   [
     ('src.scripts.ant_colony_simple_ACO.ant_colony_optimization', 'ACO', 'ant_solution_ACO', (0, 3, 1, 0.1, 1.0, 1, 1, 2), {}),
-    ('src.scripts.ant_colony_system.ant_colony_system', 'ACS', 'ant_solution_ACS', (0, 3, 1, 0.1, 0.1, 1.0, 1.0, 1, 1, 2), {'stagnation_epochs': 0}),
-    (
-      'src.scripts.ant_best_worst.ant_colony_best_worst',
-      'ABW',
-      'ant_solution_best_worst',
-      (0, 3, 1, 0.1, 2, 1.0, 1, 1),
-      {'mutation_probability': 1, 'restart_stagnation': 0, 'stagnation_epochs': 0},
-    ),
+    ('src.scripts.ant_colony_system.ant_colony_system', 'ACS', 'ant_solution_ACS', (0, 3, 1, 0.1, 0.1, 1.0, 1.0, 1, 1, 2), {}),
+    ('src.scripts.ant_best_worst.ant_colony_best_worst', 'ABW', 'ant_solution_best_worst', (0, 3, 1, 0.1, 2, 1.0, 1, 1), {'mutation_probability': 1, 'restart_stagnation': 0}),
   ],
 )
 def test_orchestrators_emit_live_safe_epoch_callbacks_without_changing_return_tuple(monkeypatch, module_name, colony_name, ant_name, arguments, kwargs):
@@ -681,7 +746,7 @@ def test_bwas_history_records_final_post_restart_pheromones(monkeypatch, tmp_pat
   history_path = tmp_path / 'bwas_history.jsonl'
   writer = PheromoneHistoryWriter(GRAPH, history_path)
 
-  module.ABW(GRAPH, 0, 3, 1, 0.1, 2, 0.5, 1, 1, mutation_probability=0, restart_stagnation=1, stagnation_epochs=0, epoch_callback=writer)
+  module.ABW(GRAPH, 0, 3, 1, 0.1, 2, 0.5, 1, 1, mutation_probability=0, restart_stagnation=1, epoch_callback=writer)
 
   restart_observation = load_pheromone_history(GRAPH, history_path)[-1]
   assert restart_observation['stage'] == 'pheromone_update'
@@ -708,4 +773,4 @@ def test_real_aco_file_history_matches_final_state_and_limits_frames(monkeypatch
   assert snapshots[-1]['pheromones'] == pytest.approx(expected_final)
   assert len(history_path.read_text(encoding='utf-8').splitlines()) == epochs + 1
   assert len(figure.frames) == len(snapshots) <= 4
-  assert figure.layout.sliders[0].steps[-1].label == (f'{epochs} · pheromone_update')
+  assert figure.layout.sliders[0].steps[-1].label == f'Iteration {epochs}'

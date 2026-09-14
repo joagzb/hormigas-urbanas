@@ -49,6 +49,7 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashabl
   if start_node not in graph_map['node_index'] or end_node not in graph_map['node_index']:
     return None, np.inf
   solution_path = [start_node]
+  visited_nodes = {start_node}
   solution_cost = 0
 
   # Construct a route without revisiting nodes
@@ -59,7 +60,7 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashabl
     neighbors_edge_types = np.array(graph_map.get('edge_types', {}).get(current_node, ['walk'] * len(neighbors)), dtype=object)
     neighbors_pheromones = np.array(pheromone_graph[current_node])
 
-    filter_visited_nodes_mask = ~np.isin(neighbors, solution_path)
+    filter_visited_nodes_mask = np.array([neighbor not in visited_nodes for neighbor in neighbors], dtype=bool)
     neighbors = neighbors[filter_visited_nodes_mask]
     neighbors_weights = neighbors_weights[filter_visited_nodes_mask]
     neighbors_edge_types = neighbors_edge_types[filter_visited_nodes_mask]
@@ -81,13 +82,16 @@ def ant_solution_ACO(graph_map: dict, pheromone_graph: dict, start_node: Hashabl
       # Fallback to greedy by cost
       next_node = neighbors[np.argmin(selection_weights)]
       solution_path.append(next_node)
+      visited_nodes.add(next_node)
       continue
 
     probabilities = combined / sum_values
 
     # select the next node based on the roulette wheel selection
     next_node_index = roulette_wheel_selection(probabilities)
-    solution_path.append(neighbors[next_node_index - 1])
+    next_node = neighbors[next_node_index - 1]
+    solution_path.append(next_node)
+    visited_nodes.add(next_node)
 
   if solution_path[-1] != np.inf:  # If the ant is not lost, return the path and calculate the total cost
     for i in range(len(solution_path) - 1):

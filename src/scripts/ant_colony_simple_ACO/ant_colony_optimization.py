@@ -1,4 +1,4 @@
-from collections import Counter
+from numbers import Integral
 from time import time
 
 import numpy as np
@@ -8,7 +8,20 @@ from ..utils.generators import deterministic_route_cost, generate_pheromone_map,
 from .ant_solution_ACO import ant_solution_ACO
 
 
-def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_pheromone_lvl, heuristic_weight, pheromone_weight, max_epochs: int = 500, *, epoch_callback=None):
+def ACO(
+  graph_map,
+  start_node,
+  end_node,
+  ants_number,
+  evaporation_rate,
+  initial_pheromone_lvl,
+  heuristic_weight,
+  pheromone_weight,
+  max_epochs: int = 500,
+  *,
+  aco_global_best_patience=10,
+  epoch_callback=None,
+):
   """Find the best route seen by the Ant Colony Optimization algorithm.
 
   Parameters:
@@ -33,6 +46,9 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
       Legacy positional name for beta, the inverse-cost exponent.
   max_epochs : int
       Maximum number of epochs to run.
+  aco_global_best_patience : int
+      Consecutive completed epochs without strict finite global-best
+      improvement before stopping. The earliest possible stop is epoch 2.
   epoch_callback : callable or None
       Optional observer called after each completed epoch with the final
       ``pheromone_update`` observation.
@@ -49,6 +65,8 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
       Number of completed epochs.
   """
   start_time = time()
+  if isinstance(aco_global_best_patience, bool) or not isinstance(aco_global_best_patience, Integral) or aco_global_best_patience <= 0:
+    raise ValueError('aco_global_best_patience must be a positive integer')
   require_edge_types = bool(graph_map.get('buses')) or any(isinstance(node, str) and node.startswith('bus:') for node in graph_map.get('node_index', []))
   validate_graph(graph_map, require_edge_types=require_edge_types)
   if start_node == end_node:
@@ -63,6 +81,7 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
     tau0 = 1.0 if baseline_cost == 0 else len(graph_map['node_index']) / baseline_cost
   else:
     tau0 = initial_pheromone_lvl
+
   alpha = heuristic_weight
   beta = pheromone_weight
   pheromone_graph = generate_pheromone_map(graph_map, tau0)
@@ -71,10 +90,11 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
   best_path = None
   best_cost = np.inf
   epochs = 0
-  converged_ants = 0
+  epochs_without_global_best_improvement = 0
 
-  while converged_ants < ants_number and epochs < max_epochs:
+  while epochs < max_epochs:
     # Construct routes and retain the best route
+    global_best_improved = False
     for ant in range(ants_number):
       route, distance = ant_solution_ACO(graph_map, pheromone_graph, start_node, end_node, alpha, beta)
 
@@ -84,6 +104,7 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
       if np.isfinite(distance) and distance < best_cost:
         best_path = route.copy()
         best_cost = distance
+        global_best_improved = True
 
     finite_distances = distances[np.isfinite(distances)]
     if finite_distances.size:
@@ -107,10 +128,12 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
       for current_node, next_node in zip(route, route[1:]):
         edge_index = graph_map['connections'][current_node].index(next_node)
         pheromone_graph[current_node][edge_index] += deposit
-    # Check convergence
-    if finite_distances.size:
-      _, converged_ants = Counter(finite_distances).most_common(1)[0]
     epochs += 1
+
+    if global_best_improved:
+      epochs_without_global_best_improvement = 0
+    else:
+      epochs_without_global_best_improvement += 1
 
     notify_stage(
       epoch_callback,
@@ -122,5 +145,8 @@ def ACO(graph_map, start_node, end_node, ants_number, evaporation_rate, initial_
       global_best_path=best_path,
       global_best_cost=best_cost,
     )
+
+    if epochs >= 2 and np.isfinite(best_cost) and epochs_without_global_best_improvement >= aco_global_best_patience:
+      break
 
   return best_path, best_cost, time() - start_time, epochs

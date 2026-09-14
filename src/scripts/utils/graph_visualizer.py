@@ -9,15 +9,7 @@ import networkx as nx
 import numpy as np
 import plotly.graph_objects as go
 
-from .generators import EDGE_TYPES, validate_graph
-
-
-EDGE_STYLES = {
-  'walk': {'color': '#7f8c8d', 'dash': 'solid'},
-  'board': {'color': '#f39c12', 'dash': 'dot'},
-  'ride': {'color': '#2980b9', 'dash': 'solid'},
-  'alight': {'color': '#8e44ad', 'dash': 'dash'},
-}
+from .generators import validate_graph
 
 
 @dataclass(frozen=True)
@@ -331,83 +323,9 @@ def node_style(graph_nx: nx.DiGraph, base_size: int = 300, bus_size: int = 450) 
   return colors, sizes
 
 
-def _parallel_offsets(edges):
-  grouped = {}
-  for edge in edges:
-    pair = tuple(sorted((edge.source, edge.target), key=_node_sort_key))
-    grouped.setdefault(pair, []).append(edge)
-
-  offsets = {}
-  for pair_edges in grouped.values():
-    for index, edge in enumerate(pair_edges):
-      centered_index = index - (len(pair_edges) - 1) / 2
-      offsets[(edge.source, edge.adjacency_index)] = centered_index * 0.045
-  return offsets
-
-
-def _edge_coordinates(edge, positions, offset):
-  source_x, source_y = positions[edge.source]
-  target_x, target_y = positions[edge.target]
-  length = math.hypot(target_x - source_x, target_y - source_y)
-  if length == 0:
-    return source_x, source_y, target_x, target_y
-  perpendicular_x = -(target_y - source_y) / length
-  perpendicular_y = (target_x - source_x) / length
-  return (source_x + perpendicular_x * offset, source_y + perpendicular_y * offset, target_x + perpendicular_x * offset, target_y + perpendicular_y * offset)
-
-
-def _pheromone_bin(value, minimum, maximum, bin_count):
-  if maximum <= minimum:
-    return bin_count - 1
-  normalized = (math.log1p(max(0.0, value)) - minimum) / (maximum - minimum)
-  return min(bin_count - 1, max(0, int(normalized * bin_count)))
-
-
-def _edge_traces(edges, positions, offsets, pheromones, minimum, maximum, bin_count):
-  grouped = {(edge_type, bin_index): [] for edge_type in sorted(EDGE_TYPES) for bin_index in range(bin_count)}
-  for edge, pheromone in zip(edges, pheromones):
-    bin_index = _pheromone_bin(pheromone, minimum, maximum, bin_count)
-    grouped[(edge.edge_type, bin_index)].append((edge, pheromone))
-
-  traces = []
-  for edge_type in sorted(EDGE_TYPES):
-    style = EDGE_STYLES[edge_type]
-    for bin_index in range(bin_count):
-      x_values = []
-      y_values = []
-      labels = []
-      marker_sizes = []
-      for edge, pheromone in grouped[(edge_type, bin_index)]:
-        coordinates = _edge_coordinates(edge, positions, offsets[(edge.source, edge.adjacency_index)])
-        source_x, source_y, target_x, target_y = coordinates
-        label = f'{edge.source!s} → {edge.target!s}<br>Type: {edge.edge_type}<br>Cost: {edge.weight:g}<br>Pheromone: {pheromone:.6g}'
-        x_values.extend((source_x, target_x, None))
-        y_values.extend((source_y, target_y, None))
-        labels.extend((label, label, None))
-        marker_sizes.extend((0, 5 + bin_index, 0))
-
-      traces.append(
-        go.Scatter(
-          x=x_values,
-          y=y_values,
-          mode='lines+markers',
-          line={'color': style['color'], 'dash': style['dash'], 'width': 0.7 + bin_index * 0.55},
-          marker={'color': style['color'], 'size': marker_sizes, 'symbol': 'arrow', 'angleref': 'previous'},
-          opacity=0.25 + (bin_index + 1) / (bin_count + 1) * 0.7,
-          text=labels,
-          hovertemplate='%{text}<extra></extra>',
-          name=f'{edge_type.title()} · pheromone {bin_index + 1}/{bin_count}',
-          legendgroup=edge_type,
-          showlegend=bin_index == bin_count - 1,
-        )
-      )
-  return traces
-
-
 def _route_trace(path, positions, *, name, color, dash='solid', width=4):
   x_values = []
   y_values = []
-  labels = []
   marker_sizes = []
   if path:
     for source, target in zip(path, path[1:]):
@@ -415,10 +333,8 @@ def _route_trace(path, positions, *, name, color, dash='solid', width=4):
         continue
       source_x, source_y = positions[source]
       target_x, target_y = positions[target]
-      label = f'{name}<br>{source!s} → {target!s}'
       x_values.extend((source_x, target_x, None))
       y_values.extend((source_y, target_y, None))
-      labels.extend((label, label, None))
       marker_sizes.extend((0, 9, 0))
   return go.Scatter(
     x=x_values,
@@ -426,23 +342,26 @@ def _route_trace(path, positions, *, name, color, dash='solid', width=4):
     mode='lines+markers',
     line={'color': color, 'dash': dash, 'width': width},
     marker={'color': color, 'size': marker_sizes, 'symbol': 'arrow', 'angleref': 'previous'},
-    text=labels,
-    hovertemplate='%{text}<extra></extra>',
+    hoverinfo='skip',
     name=name,
   )
+
+
+def _structural_edge_trace(edges, positions):
+  x_values = []
+  y_values = []
+  for edge in edges:
+    source_x, source_y = positions[edge.source]
+    target_x, target_y = positions[edge.target]
+    x_values.extend((source_x, target_x, None))
+    y_values.extend((source_y, target_y, None))
+  return go.Scatter(x=x_values, y=y_values, mode='lines', line={'color': '#7f8c8d', 'width': 1}, opacity=0.35, hoverinfo='skip', name='Structural graph edges', showlegend=False)
 
 
 def _node_trace(graph_nx, positions):
   nodes = list(graph_nx.nodes)
   colors = ['#f39c12' if graph_nx.nodes[node].get('node_type') == 'bus' else '#aed6f1' for node in nodes]
   sizes = [13 if graph_nx.nodes[node].get('node_type') == 'bus' else 10 for node in nodes]
-  labels = []
-  for node in nodes:
-    metadata = graph_nx.nodes[node]
-    label = f'Node: {node!s}'
-    if metadata.get('node_type') == 'bus':
-      label += f'<br>Bus line: {metadata.get("line_id")}<br>Direction: {metadata.get("direction")}'
-    labels.append(label)
   return go.Scatter(
     x=[positions[node][0] for node in nodes],
     y=[positions[node][1] for node in nodes],
@@ -450,14 +369,13 @@ def _node_trace(graph_nx, positions):
     marker={'color': colors, 'size': sizes, 'line': {'color': '#34495e', 'width': 0.5}},
     text=[str(node) for node in nodes],
     textposition='top center',
-    hovertext=labels,
-    hovertemplate='%{hovertext}<extra></extra>',
+    hoverinfo='skip',
     name='Nodes',
   )
 
 
 def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=None, title='Pheromone evolution', pheromone_bins=6):
-  """Build a Plotly animation from bounded post-update epoch snapshots.
+  """Build a minimal route animation from bounded post-update snapshots.
 
   ``reference_path`` is supplied externally and represents a Dijkstra shortest
   route under the graph's configured generalized costs.
@@ -469,23 +387,14 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
 
   graph_nx = build_graph_from_dict(graph_dict)
   positions = compute_positions(graph_dict, graph_nx)
-  offsets = _parallel_offsets(edges)
 
   if snapshots:
-    pheromone_arrays = []
     for snapshot in snapshots:
       if len(snapshot['pheromones']) != len(edges):
         raise ValueError('Snapshot pheromones must match the stable edge order')
       pheromone_array = np.asarray(snapshot['pheromones'], dtype=float)
       if not np.all(np.isfinite(pheromone_array)):
         raise ValueError('Snapshot pheromones must contain finite numeric values')
-      pheromone_arrays.append(pheromone_array)
-    all_values = np.concatenate(pheromone_arrays)
-    if all_values.size:
-      minimum = float(np.min(np.log1p(np.maximum(0.0, all_values))))
-      maximum = float(np.max(np.log1p(np.maximum(0.0, all_values))))
-    else:
-      minimum = maximum = 0.0
   else:
     snapshots = [
       {
@@ -499,27 +408,23 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
         'restarted': False,
       }
     ]
-    minimum = maximum = 0.0
 
   def frame_traces(snapshot):
-    traces = _edge_traces(edges, positions, offsets, snapshot['pheromones'], minimum, maximum, pheromone_bins)
-    traces.append(_route_trace(snapshot.get('iteration_best_path'), positions, name='Iteration best-found route', color='#f1c40f', dash='dot', width=3))
-    traces.append(_route_trace(snapshot.get('global_best_path'), positions, name='Global best-found route', color='#e74c3c'))
-    traces.append(_route_trace(reference_path, positions, name='Dijkstra shortest route under configured generalized costs', color='#2ecc71', dash='dash', width=3))
-    traces.append(_node_trace(graph_nx, positions))
-    return traces
+    return [
+      _structural_edge_trace(edges, positions),
+      _route_trace(reference_path, positions, name='Dijkstra reference route', color='#2ecc71', dash='dash', width=3),
+      _route_trace(snapshot.get('global_best_path'), positions, name='Global best-found route', color='#e74c3c'),
+      _node_trace(graph_nx, positions),
+    ]
 
   has_recorded_epochs = snapshots[0]['epoch'] != 0
   frames = []
   slider_steps = []
   if has_recorded_epochs:
     for snapshot in snapshots:
-      stage = snapshot.get('stage', 'pheromone_update')
-      frame_name = f'{snapshot["epoch"]}:{stage}'
-      frame_label = f'{snapshot["epoch"]} · {stage}'
-      frame_title = f'{title} · epoch {snapshot["epoch"]} · {stage}'
-      if snapshot.get('restarted'):
-        frame_title += ' · pheromones restarted'
+      frame_name = str(snapshot['epoch'])
+      frame_label = f'Iteration {snapshot["epoch"]}'
+      frame_title = frame_label
       frames.append(go.Frame(name=frame_name, data=frame_traces(snapshot), layout=go.Layout(title={'text': frame_title})))
       slider_steps.append(
         {'label': frame_label, 'method': 'animate', 'args': [[frame_name], {'mode': 'immediate', 'frame': {'duration': 0, 'redraw': False}, 'transition': {'duration': 0}}]}
@@ -527,8 +432,8 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
 
   first_snapshot = snapshots[0]
   layout = go.Layout(
-    title={'text': title if has_recorded_epochs else f'{title} · no recorded epochs'},
-    hovermode='closest',
+    title={'text': f'Iteration {first_snapshot["epoch"]}'},
+    hovermode=False,
     template='plotly_white',
     showlegend=True,
     xaxis={'visible': False, 'scaleanchor': 'y', 'scaleratio': 1},
@@ -549,7 +454,7 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
         ],
       }
     ]
-    layout.sliders = [{'active': 0, 'currentvalue': {'prefix': 'Epoch · stage: '}, 'pad': {'t': 45}, 'steps': slider_steps}]
+    layout.sliders = [{'active': 0, 'currentvalue': {'prefix': ''}, 'pad': {'t': 45}, 'steps': slider_steps}]
 
   return go.Figure(data=frame_traces(first_snapshot), layout=layout, frames=frames)
 

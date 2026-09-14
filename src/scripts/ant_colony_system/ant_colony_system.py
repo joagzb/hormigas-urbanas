@@ -2,12 +2,8 @@ from time import time
 
 import numpy as np
 
-try:
-  from configuration.algorithm_settings import settings
-except ModuleNotFoundError:  # Repository-root package imports.
-  from src.configuration.algorithm_settings import settings
-
 from ..utils.algorithm_observer import notify_stage
+from ..utils.algorithm_termination import has_path_consensus, has_stable_iteration_best_cost, validate_path_consensus_threshold
 from ..utils.generators import deterministic_route_cost, generate_pheromone_map, validate_graph
 from .ant_solution_ACS import ant_solution_ACS
 
@@ -25,6 +21,7 @@ def ACS(
   pheromone_weight,
   max_epochs: int = 500,
   *,
+  path_consensus_threshold=0.85,
   stagnation_epochs=None,
   epoch_callback=None,
 ):
@@ -57,12 +54,15 @@ def ACS(
       Legacy positional name for beta, the inverse-cost exponent.
   max_epochs : int
       Maximum number of epochs to run.
+  path_consensus_threshold : float
+      Fraction of finite ants that must complete the same route before stable
+      consecutive iteration-best costs can stop the search.
   stagnation_epochs : int or None
-      Consecutive non-improving epochs before stopping. ``None`` uses the
-      configured ACS limit; a non-positive value disables early stopping.
+      Deprecated compatibility argument. It is ignored and does not affect
+      consensus termination.
   epoch_callback : callable or None
       Optional observer called after each completed epoch with the final
-      ``pheromone_update`` observation.`.
+      ``pheromone_update`` observation.
 
   Returns:
   --------
@@ -76,6 +76,7 @@ def ACS(
       Number of completed epochs.
   """
   start_time = time()
+  validate_path_consensus_threshold(path_consensus_threshold)
   require_edge_types = bool(graph_map.get('buses')) or any(isinstance(node, str) and node.startswith('bus:') for node in graph_map.get('node_index', []))
   validate_graph(graph_map, require_edge_types=require_edge_types)
   if start_node == end_node:
@@ -96,17 +97,18 @@ def ACS(
   global_best_path = None
   global_best_cost = np.inf
   epochs = 0
-  stagnant_epochs = 0
-  if stagnation_epochs is None:
-    stagnation_epochs = settings['acs_stagnation_epochs']
+  previous_iteration_best_cost = None
 
   while epochs < max_epochs:
-    improved = False
+    routes = [None] * ants_number
+    distances = np.full(ants_number, np.inf)
     iteration_best_path = None
     iteration_best_cost = np.inf
     # Construct routes and apply local pheromone updates
     for ant in range(ants_number):
       route, distance = ant_solution_ACS(graph_map, pheromone_graph, start_node, end_node, transition_prob, alpha, beta, local_evap_rate, tau0)
+      routes[ant] = route
+      distances[ant] = distance
       if np.isfinite(distance) and distance < iteration_best_cost:
         iteration_best_path = route.copy()
         iteration_best_cost = distance
@@ -114,7 +116,6 @@ def ACS(
       if np.isfinite(distance) and distance < global_best_cost:
         global_best_path = route.copy()
         global_best_cost = distance
-        improved = True
 
     # Global pheromone evaporation on retained global-best edges
     # Global pheromone deposition on retained global-best edges
@@ -124,8 +125,6 @@ def ACS(
         edge_index = graph_map['connections'][current_node].index(next_node)
         current_pheromone = pheromone_graph[current_node][edge_index]
         pheromone_graph[current_node][edge_index] = (1 - global_evap_rate) * current_pheromone + global_evap_rate * deposit
-    # Stop when the retained best cost has not improved for long enough
-    stagnant_epochs = 0 if improved else stagnant_epochs + 1
     epochs += 1
 
     notify_stage(
@@ -139,7 +138,10 @@ def ACS(
       global_best_cost=global_best_cost,
     )
 
-    if stagnation_epochs > 0 and stagnant_epochs >= stagnation_epochs:
+    consensus_reached = has_path_consensus(routes, distances, path_consensus_threshold)
+    stable_iteration_best = has_stable_iteration_best_cost(previous_iteration_best_cost, iteration_best_cost)
+    previous_iteration_best_cost = iteration_best_cost
+    if consensus_reached and stable_iteration_best:
       break
 
   return global_best_path, global_best_cost, time() - start_time, epochs

@@ -8,6 +8,7 @@ except ModuleNotFoundError:  # Repository-root package imports.
   from src.configuration.algorithm_settings import settings
 
 from ..utils.algorithm_observer import notify_stage
+from ..utils.algorithm_termination import has_path_consensus, has_stable_iteration_best_cost, validate_path_consensus_threshold
 from ..utils.generators import deterministic_route_cost, generate_pheromone_map, validate_graph
 from .ant_solution_ABW import ant_solution_best_worst
 
@@ -39,6 +40,7 @@ def ABW(
   mutation_probability=0.05,
   mutation_scale=2.0,
   restart_stagnation=None,
+  path_consensus_threshold=0.85,
   stagnation_epochs=None,
   epoch_callback=None,
 ):
@@ -77,9 +79,12 @@ def ABW(
       Consecutive non-improving epochs before pheromone levels restart. A
       ``None`` value uses the configured BWAS restart limit; a non-positive
       value disables restarts.
+  path_consensus_threshold : float
+      Fraction of finite ants that must complete the same route before stable
+      consecutive iteration-best costs can stop the search.
   stagnation_epochs : int or None
-      Consecutive non-improving epochs before stopping. ``None`` uses the
-      configured BWAS limit; a non-positive value disables early stopping.
+      Deprecated compatibility argument. It is ignored and does not affect
+      consensus termination.
   epoch_callback : callable or None
       Optional observer called after each completed epoch and any restart,
       with the final ``pheromone_update`` observation.
@@ -96,6 +101,7 @@ def ABW(
       Number of completed epochs.
   """
   start_time = time()
+  validate_path_consensus_threshold(path_consensus_threshold)
   require_edge_types = bool(graph_map.get('buses')) or any(isinstance(node, str) and node.startswith('bus:') for node in graph_map.get('node_index', []))
   validate_graph(graph_map, require_edge_types=require_edge_types)
   if start_node == end_node:
@@ -120,13 +126,11 @@ def ABW(
   global_best_path = None
   global_best_cost = np.inf
   restart_stagnant_epochs = 0
-  best_cost_stagnant_epochs = 0
   if restart_stagnation is None:
     restart_stagnation = settings['bwas_restart_stagnation']
-  if stagnation_epochs is None:
-    stagnation_epochs = settings['bwas_stagnation_epochs']
   last_restart_epoch = 0
   epochs = 0
+  previous_iteration_best_cost = None
 
   while epochs < max_epochs:
     iteration_best_path = None
@@ -151,8 +155,6 @@ def ABW(
         global_best_path = routes[best_index].copy()
         global_best_cost = iteration_best_cost
         improved = True
-
-    current_epoch = epochs + 1
 
     # Global pheromone evaporation
     for pheromones in pheromone_graph.values():
@@ -187,13 +189,11 @@ def ABW(
     for pheromones in pheromone_graph.values():
       pheromones[pheromones < min_pheromone_lvl] = min_pheromone_lvl
 
-    # Restart pheromones without resetting the separate stopping counter
+    # Restart pheromones to restore trail diversity while retaining the global best
     if improved:
       restart_stagnant_epochs = 0
-      best_cost_stagnant_epochs = 0
     else:
       restart_stagnant_epochs += 1
-      best_cost_stagnant_epochs += 1
     restarted = False
     if restart_stagnation > 0 and restart_stagnant_epochs >= restart_stagnation:
       pheromone_graph = generate_pheromone_map(graph_map, tau0)
@@ -214,7 +214,11 @@ def ABW(
       global_best_cost=global_best_cost,
       restarted=restarted,
     )
-    if stagnation_epochs > 0 and best_cost_stagnant_epochs >= stagnation_epochs:
+
+    consensus_reached = has_path_consensus(routes, distances, path_consensus_threshold)
+    stable_iteration_best = has_stable_iteration_best_cost(previous_iteration_best_cost, iteration_best_cost)
+    previous_iteration_best_cost = iteration_best_cost
+    if consensus_reached and stable_iteration_best:
       break
 
   return global_best_path, global_best_cost, time() - start_time, epochs
