@@ -38,7 +38,6 @@ def ABW(
   initial_pheromone_lvl,
   heuristic_weight,
   pheromone_weight,
-  *,
   worst_penalty_rate=None,
   mutation_probability=0.05,
   mutation_scale=2.0,
@@ -167,7 +166,7 @@ def ABW(
       routes[ant] = route
       distances[ant] = distance
 
-    # Retain the global best and select the worst route
+    # Select the best finite route for this iteration and the finite worst route.
     iteration_best_path = None
     iteration_best_cost = np.inf
     finite_indices = np.flatnonzero(np.isfinite(distances))

@@ -20,7 +20,6 @@ def ACS(
   heuristic_weight,
   pheromone_weight,
   max_epochs: int = 500,
-  *,
   global_best_patience=10,
   epoch_callback=None,
 ):

@@ -18,7 +18,6 @@ def ACO(
   heuristic_weight,
   pheromone_weight,
   max_epochs: int = 500,
-  *,
   global_best_patience=10,
   epoch_callback=None,
 ):
@@ -107,15 +106,14 @@ def ACO(
       routes[ant] = route
       distances[ant] = distance
 
-    # retain the best route
-    finite_distances = distances[np.isfinite(distances)]
-    if finite_distances.size:
-      iteration_best_index = int(np.nanargmin(distances))
-      iteration_best_path = routes[iteration_best_index].copy()
-      iteration_best_cost = distances[iteration_best_index]
-    else:
-      iteration_best_path = None
-      iteration_best_cost = np.inf
+    # Select the best finite route for this iteration.
+    iteration_best_path = None
+    iteration_best_cost = np.inf
+    finite_indices = np.flatnonzero(np.isfinite(distances))
+    if finite_indices.size:
+      best_index = finite_indices[np.argmin(distances[finite_indices])]
+      iteration_best_cost = distances[best_index]
+      iteration_best_path = routes[best_index].copy()
 
     improved, epochs_without_global_best_improvement = update_global_best(best_cost, iteration_best_cost, epochs_without_global_best_improvement)
     if improved:
@@ -154,7 +152,6 @@ def ACO(
       global_best_cost=best_cost,
     )
 
-    # TODO: CAN I PUT WHAT IS IN THE LINE 112 ABOVE THIS CODE?
     if epochs_without_global_best_improvement >= validate_global_best(global_best_patience):
       break
 

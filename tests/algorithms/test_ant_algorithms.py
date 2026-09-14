@@ -99,11 +99,101 @@ MAX_EPOCH_ALGORITHMS = [
   ),
 ]
 
+POSITIONAL_OPTIONAL_ALGORITHMS = [
+  (
+    'src.scripts.ant_colony_simple_ACO.ant_colony_optimization',
+    'ACO',
+    (START_NODE, END_NODE, 2, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 3),
+    (2,),
+    ('global_best_patience',),
+  ),
+  (
+    'src.scripts.ant_colony_system.ant_colony_system',
+    'ACS',
+    (START_NODE, END_NODE, 2, EVAPORATION_RATE, LOCAL_EVAPORATION_RATE, TRANSITION_PROBABILITY, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 3),
+    (2,),
+    ('global_best_patience',),
+  ),
+  (
+    'src.scripts.ant_best_worst.ant_colony_best_worst',
+    'ABW',
+    (START_NODE, END_NODE, 2, EVAPORATION_RATE, 3, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT),
+    (0.2, 0.0, 1.0, 0, 0.01, 2),
+    ('worst_penalty_rate', 'mutation_probability', 'mutation_scale', 'restart_stagnation', 'min_pheromone_lvl', 'global_best_patience'),
+  ),
+]
+
+MIXED_FINITE_DISTANCE_ALGORITHMS = [
+  (
+    'src.scripts.ant_colony_simple_ACO.ant_colony_optimization',
+    'ACO',
+    'ant_solution_ACO',
+    (START_NODE, END_NODE, 3, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 1),
+    {},
+  ),
+  (
+    'src.scripts.ant_colony_system.ant_colony_system',
+    'ACS',
+    'ant_solution_ACS',
+    (START_NODE, END_NODE, 3, EVAPORATION_RATE, LOCAL_EVAPORATION_RATE, TRANSITION_PROBABILITY, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 1),
+    {},
+  ),
+  (
+    'src.scripts.ant_best_worst.ant_colony_best_worst',
+    'ABW',
+    'ant_solution_best_worst',
+    (START_NODE, END_NODE, 3, EVAPORATION_RATE, 1, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT),
+    {'mutation_probability': 0, 'restart_stagnation': 0},
+  ),
+]
+
 
 def _multimodal_square_graph():
   map_graph = generate_square_city_graph(2, fixed_weight=10.0)
   bus_services = generate_bus_line_square_city(2, fixed_weight=1.0, line_id='E2E', route=[0, 2])
   return merge_bus_and_map_graph(map_graph, bus_services)
+
+
+@pytest.mark.parametrize(('module_name', 'colony_name', 'required_arguments', 'optional_arguments', 'optional_names'), POSITIONAL_OPTIONAL_ALGORITHMS)
+def test_algorithm_optional_parameters_support_positional_and_keyword_calls(module_name, colony_name, required_arguments, optional_arguments, optional_names):
+  module = importlib.import_module(module_name)
+  algorithm = getattr(module, colony_name)
+  positional_observations = []
+  keyword_observations = []
+
+  np.random.seed(17)
+  positional_result = algorithm(GRAPH, *required_arguments, *optional_arguments, positional_observations.append)
+
+  np.random.seed(17)
+  keyword_arguments = dict(zip(optional_names, optional_arguments))
+  keyword_result = algorithm(GRAPH, *required_arguments, **keyword_arguments, epoch_callback=keyword_observations.append)
+
+  assert positional_result[:2] == keyword_result[:2]
+  assert positional_result[3] == keyword_result[3]
+  assert len(positional_observations) == len(keyword_observations)
+  for positional, keyword in zip(positional_observations, keyword_observations):
+    assert {key: value for key, value in positional.items() if key != 'pheromones'} == {key: value for key, value in keyword.items() if key != 'pheromones'}
+    assert positional['pheromones'].keys() == keyword['pheromones'].keys()
+    for node in positional['pheromones']:
+      assert positional['pheromones'][node] == pytest.approx(keyword['pheromones'][node])
+
+
+@pytest.mark.parametrize(('module_name', 'colony_name', 'ant_name', 'arguments', 'kwargs'), MIXED_FINITE_DISTANCE_ALGORITHMS)
+def test_orchestrators_select_finite_iteration_best_from_mixed_nonfinite_distances(monkeypatch, module_name, colony_name, ant_name, arguments, kwargs):
+  module = importlib.import_module(module_name)
+  finite_path = [0, 1, 3]
+  solutions = iter([(None, np.inf), (finite_path, 2.0), (None, np.nan)])
+  monkeypatch.setattr(module, ant_name, lambda *args: next(solutions))
+  observations = []
+
+  path, cost, _, epochs = getattr(module, colony_name)(GRAPH, *arguments, epoch_callback=observations.append, **kwargs)
+
+  assert (path, cost, epochs) == (finite_path, 2.0, 1)
+  assert len(observations) == 1
+  assert observations[0]['iteration_best_path'] == finite_path
+  assert observations[0]['iteration_best_cost'] == pytest.approx(2.0)
+  assert observations[0]['global_best_path'] == finite_path
+  assert observations[0]['global_best_cost'] == pytest.approx(2.0)
 
 
 @pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)
@@ -330,16 +420,35 @@ def test_aco_no_finite_route_stops_when_patience_is_exhausted(monkeypatch):
   assert epochs == 1
 
 
-def test_aco_callback_observes_stopping_epoch_before_break(monkeypatch):
-  module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
-  monkeypatch.setattr(module, 'ant_solution_ACO', lambda *args: ([0, 1, 3], 2.0))
+@pytest.mark.parametrize(
+  ('module_name', 'colony_name', 'ant_name', 'arguments', 'kwargs', 'expected_terminal_pheromone'),
+  [
+    ('src.scripts.ant_colony_simple_ACO.ant_colony_optimization', 'ACO', 'ant_solution_ACO', (START_NODE, END_NODE, 1, 0.1, 1.0, 1, 1, 5), {}, 1.76),
+    ('src.scripts.ant_colony_system.ant_colony_system', 'ACS', 'ant_solution_ACS', (START_NODE, END_NODE, 1, 0.1, 0.1, 1.0, 1.0, 1, 1, 5), {}, 0.905),
+    (
+      'src.scripts.ant_best_worst.ant_colony_best_worst',
+      'ABW',
+      'ant_solution_best_worst',
+      (START_NODE, END_NODE, 1, 0.1, 5, 1.0, 1, 1),
+      {'mutation_probability': 0, 'restart_stagnation': 0},
+      1.76,
+    ),
+  ],
+)
+def test_callbacks_observe_completed_patience_epoch_after_final_pheromone_update(monkeypatch, module_name, colony_name, ant_name, arguments, kwargs, expected_terminal_pheromone):
+  module = importlib.import_module(module_name)
+  monkeypatch.setattr(module, ant_name, lambda *args: ([0, 1, 3], 2.0))
   observations = []
 
-  *_, epochs = module.ACO(GRAPH, START_NODE, END_NODE, 1, EVAPORATION_RATE, 1.0, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, 5, global_best_patience=1, epoch_callback=observations.append)
+  path, cost, _, epochs = getattr(module, colony_name)(GRAPH, *arguments, global_best_patience=1, epoch_callback=observations.append, **kwargs)
 
+  assert (path, cost) == ([0, 1, 3], 2.0)
   assert epochs == 2
   assert [observation['epoch'] for observation in observations] == [1, 2]
   assert observations[-1]['stage'] == 'pheromone_update'
+  assert observations[-1]['global_best_path'] == [0, 1, 3]
+  assert observations[-1]['global_best_cost'] == pytest.approx(2.0)
+  assert observations[-1]['pheromones'][0][0] == pytest.approx(expected_terminal_pheromone)
 
 
 @pytest.mark.parametrize('patience', [0, -1, 1.5, True])

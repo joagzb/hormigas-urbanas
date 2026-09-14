@@ -23,16 +23,21 @@ def test_algorithm_settings_keys_and_values():
     'beta',
     'global_best_patience',
     'bwas_restart_stagnation',
+    'worst_penalty_rate',
+    'mutation_probability',
+    'mutation_scale',
   }
   assert set(algorithm_settings.settings.keys()) == expected_keys
 
-  rate_keys = {'f_min', 'evaporation_rate', 'local_evaporation_rate', 'transition_probability'}
+  rate_keys = {'f_min', 'evaporation_rate', 'local_evaporation_rate', 'transition_probability', 'worst_penalty_rate', 'mutation_probability'}
   for key, value in algorithm_settings.settings.items():
     logger.info('algorithm_settings[%s] = %s', key, value)
     if key == 'f_ini':
       assert value is None
     elif key in rate_keys:
       assert 0 <= value <= 1
+    elif key == 'mutation_scale':
+      assert math.isfinite(value) and value >= 0
     elif key in {'ants', 'epomax', 'global_best_patience', 'bwas_restart_stagnation'}:
       assert value > 0
     else:
@@ -44,6 +49,9 @@ def test_algorithm_settings_keys_and_values():
   assert algorithm_settings.settings['beta'] == 2.0
   assert algorithm_settings.settings['global_best_patience'] == 10
   assert algorithm_settings.settings['bwas_restart_stagnation'] == 8
+  assert algorithm_settings.settings['worst_penalty_rate'] == 0.30
+  assert algorithm_settings.settings['mutation_probability'] == 0.08
+  assert algorithm_settings.settings['mutation_scale'] == 2.5
 
 
 def test_algorithm_profiles_have_valid_domains_and_compatible_restart_patience():
@@ -63,6 +71,23 @@ def test_algorithm_profiles_have_valid_domains_and_compatible_restart_patience()
       assert math.isfinite(profile[exponent_key]) and profile[exponent_key] >= 0
     if profile['bwas_restart_stagnation'] > 0:
       assert profile['bwas_restart_stagnation'] < profile['global_best_patience']
+
+
+def test_bwas_specific_preset_fields_have_valid_domains_where_present():
+  for name, preset in algorithm_settings.presets.items():
+    profile = algorithm_settings.load_profile(name)
+
+    if 'bwas_restart_stagnation' in preset:
+      restart_stagnation = preset['bwas_restart_stagnation']
+      assert isinstance(restart_stagnation, int) and not isinstance(restart_stagnation, bool)
+      assert restart_stagnation >= 0
+      if restart_stagnation > 0:
+        assert restart_stagnation < profile['global_best_patience']
+    for rate_key in ('worst_penalty_rate', 'mutation_probability'):
+      if rate_key in preset:
+        assert math.isfinite(preset[rate_key]) and 0 <= preset[rate_key] <= 1
+    if 'mutation_scale' in preset:
+      assert math.isfinite(preset['mutation_scale']) and preset['mutation_scale'] >= 0
 
 
 def test_algorithm_specific_profiles_expose_compatible_values():
