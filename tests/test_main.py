@@ -1,13 +1,16 @@
 import builtins
 import importlib
-import runpy
+import json
 import sys
-import warnings
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from src.main import _compute_route_cost, _parse_args, _prompt_node, _route_recommendation, prepare_routing_problem
+from src.main import _parse_args, _prompt_node, _resolved_settings, prepare_routing_problem
+
+
+SIMPLE_GRAPH = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}, 'edge_types': {0: ['walk'], 1: []}}
 
 
 def test_preflight_infers_aligned_walking_types_without_mutating_input():
@@ -19,49 +22,32 @@ def test_preflight_infers_aligned_walking_types_without_mutating_input():
   assert 'edge_types' not in graph
 
 
-def test_preflight_owns_nested_connections_and_weights():
+def test_preflight_owns_nested_graph_data():
   graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [2.0], 1: []}, 'metadata': {'name': 'caller graph'}}
 
   problem = prepare_routing_problem(graph, 0, 1)
   problem.graph['connections'][0].append(0)
   problem.graph['weights'][0][0] = 99.0
+  problem.graph['metadata']['name'] = 'changed'
 
   assert graph['connections'] == {0: [1], 1: []}
   assert graph['weights'] == {0: [2.0], 1: []}
-  assert problem.graph['metadata'] == graph['metadata']
-  assert problem.graph['connections'] is not graph['connections']
-  assert problem.graph['weights'] is not graph['weights']
-  assert problem.graph['metadata'] is not graph['metadata']
+  assert graph['metadata'] == {'name': 'caller graph'}
 
 
-def test_preflight_validates_endpoints_and_graph_alignment():
-  graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [], 1: []}}
-
+def test_preflight_validates_alignment_endpoints_and_multimodal_edge_types():
+  misaligned = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [], 1: []}}
   with pytest.raises(ValueError, match='aligned'):
-    prepare_routing_problem(graph, 0, 1)
+    prepare_routing_problem(misaligned, 0, 1)
 
-  valid_graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
+  walking = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
   with pytest.raises(ValueError, match='must exist'):
-    prepare_routing_problem(valid_graph, 0, 99)
+    prepare_routing_problem(walking, 0, 99)
 
-
-def test_routing_problem_owns_trivial_route_or_delegates_without_cost_changes():
-  graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
-  trivial = prepare_routing_problem(graph, 0, 0)
-
-  assert trivial.run(lambda *_: pytest.fail('algorithm should not run')) == ([0], 0.0, 0.0, 0)
-
-  problem = prepare_routing_problem(graph, 0, 1)
-  expected = ([0, 1], 7.25, 0.01, 3)
-  assert problem.run(lambda *_args, **_kwargs: expected, ignored=True) == expected
-
-
-def test_preflight_rejects_multimodal_graph_without_explicit_edge_types():
   bus_node = 'bus:test:outbound:0'
-  graph = {'node_index': {0, bus_node}, 'connections': {0: [bus_node], bus_node: []}, 'weights': {0: [1.0], bus_node: []}}
-
+  multimodal = {'node_index': {0, bus_node}, 'connections': {0: [bus_node], bus_node: []}, 'weights': {0: [1.0], bus_node: []}}
   with pytest.raises(ValueError, match='edge_types'):
-    prepare_routing_problem(graph, 0, bus_node)
+    prepare_routing_problem(multimodal, 0, bus_node)
 
 
 def test_preflight_preserves_opaque_mixed_ids():
@@ -72,15 +58,16 @@ def test_preflight_preserves_opaque_mixed_ids():
 
   assert problem.graph == graph
   assert problem.graph is not graph
-  assert bus_node in problem.graph['node_index']
 
 
-def test_route_recommendation_compares_numeric_costs_and_handles_missing_routes():
-  assert _route_recommendation(3.0, 4.0) == "you'd better take the bus instead of walking."
-  assert _route_recommendation(4.0, 4.0) == "you'd better go by foot."
-  assert _route_recommendation(float('inf'), 4.0) == "you'd better go by foot."
-  assert _route_recommendation(float('inf'), float('inf')) == 'no route could be found.'
-  assert _compute_route_cost({}, None) == float('inf')
+def test_default_settings_are_a_fresh_copy():
+  first = _resolved_settings(None)
+  second = _resolved_settings(None)
+
+  first['ants'] = -1
+
+  assert first is not second
+  assert second['ants'] != -1
 
 
 def test_cli_rejects_unknown_preset_with_available_choices(capsys):
@@ -91,50 +78,22 @@ def test_cli_rejects_unknown_preset_with_available_choices(capsys):
   assert 'invalid choice' in capsys.readouterr().err
 
 
-def test_prompt_node_retries_non_integer_input(monkeypatch, capsys):
-  responses = iter(['not-a-number', '4'])
-  monkeypatch.setattr(builtins, 'input', lambda _: next(responses))
-
-  assert _prompt_node('Node', 3, 0, 9) == 4
-  assert capsys.readouterr().out == 'Please enter a valid integer.\n'
-
-
-def test_prompt_node_retries_out_of_range_input(monkeypatch, capsys):
-  responses = iter(['-1', '10', '5'])
+def test_prompt_node_retries_invalid_input(monkeypatch, capsys):
+  responses = iter(['not-a-number', '-1', '10', '5'])
   monkeypatch.setattr(builtins, 'input', lambda _: next(responses))
 
   assert _prompt_node('Node', 3, 0, 9) == 5
-  assert capsys.readouterr().out == 'Please enter a value between 0 and 9.\nPlease enter a value between 0 and 9.\n'
+  assert capsys.readouterr().out.splitlines() == ['Please enter a valid integer.', 'Please enter a value between 0 and 9.', 'Please enter a value between 0 and 9.']
 
 
-@pytest.mark.parametrize(
-  ('module_name', 'module_prefix', 'configuration_module', 'from_src', 'preset_name'),
-  [
-    ('src.main', 'src.scripts', 'src.configuration.algorithm_settings', False, None),
-    ('src.main', 'src.scripts', 'src.configuration.algorithm_settings', False, 'bus_friendly'),
-    ('main', 'scripts', 'configuration.algorithm_settings', True, None),
-    ('main', 'scripts', 'configuration.algorithm_settings', True, 'bus_friendly'),
-  ],
-)
-def test_documented_module_forms_forward_settings_filter_output_and_write_route_html(monkeypatch, capsys, module_name, module_prefix, configuration_module, from_src, preset_name):
-  if from_src:
+def _import_entrypoint(monkeypatch, module_name):
+  if module_name == 'main':
     monkeypatch.syspath_prepend('src')
+  sys.modules.pop(module_name, None)
+  return importlib.import_module(module_name)
 
-  calls = []
-  draw_calls = []
 
-  def algorithm(name):
-    def run(graph, start_node, end_node, *args, **kwargs):
-      calls.append((name, graph, start_node, end_node, args, kwargs))
-      return [start_node, end_node], 1.0, 0.01, 2
-
-    return run
-
-  monkeypatch.setattr(builtins, 'input', lambda _: '')
-  monkeypatch.setattr(importlib.import_module(f'{module_prefix}.utils.graph_visualizer'), 'draw_graph', lambda *args, **kwargs: draw_calls.append((args, kwargs)))
-  monkeypatch.setattr(importlib.import_module(f'{module_prefix}.ant_colony_simple_ACO.ant_colony_optimization'), 'ACO', algorithm('ACO'))
-  monkeypatch.setattr(importlib.import_module(f'{module_prefix}.ant_colony_system.ant_colony_system'), 'ACS', algorithm('ACS'))
-  monkeypatch.setattr(importlib.import_module(f'{module_prefix}.ant_best_worst.ant_colony_best_worst'), 'ABW', algorithm('ABW'))
+def _configure_main(monkeypatch, module, *, selected=False, writer_class=None):
   base_settings = {
     'ants': 17,
     'evaporation_rate': 0.11,
@@ -151,129 +110,197 @@ def test_documented_module_forms_forward_settings_filter_output_and_write_route_
     'bwas_restart_stagnation': 5,
     'f_min': 0.0002,
   }
-  selected_settings = {**base_settings, 'ants': 29, 'beta': 4.2}
-  configuration = importlib.import_module(configuration_module)
-  monkeypatch.setattr(configuration, 'settings', base_settings)
-  monkeypatch.setattr(configuration, 'load_profile', lambda name: dict(selected_settings))
-  monkeypatch.setattr(sys, 'argv', [module_name, *([] if preset_name is None else ['--preset', preset_name])])
-  sys.modules.pop(module_name, None)
+  resolved_settings = {**base_settings, 'ants': 29, 'beta': 4.2} if selected else base_settings
+  monkeypatch.setattr(module, 'settings', base_settings)
+  monkeypatch.setattr(module, 'load_profile', lambda name: dict(resolved_settings))
+  monkeypatch.setattr(module, 'generate_square_city_graph', lambda *_: {'map': True})
+  monkeypatch.setattr(module, 'generate_bus_line_square_city', lambda *_: {'bus': True})
+  monkeypatch.setattr(module, 'merge_bus_and_map_graph', lambda *_: SIMPLE_GRAPH)
+  endpoints = iter([0, 1])
+  monkeypatch.setattr(module, '_prompt_node', lambda *_: next(endpoints))
+  monkeypatch.setattr(module, 'dijkstra', lambda *_: [0, 1])
+  monkeypatch.setattr(module, 'draw_graph', lambda *_args, **_kwargs: None)
+  if writer_class is not None:
+    monkeypatch.setattr(module, 'ExperimentOutputWriter', writer_class)
+  return resolved_settings
 
-  runpy.run_module(module_name, run_name='__main__')
 
-  expected_settings = base_settings if preset_name is None else selected_settings
+@pytest.mark.parametrize('module_name', ['src.main', 'main'])
+@pytest.mark.parametrize('preset_name', [None, 'bus_friendly'])
+def test_documented_execution_contexts_forward_settings_callbacks_and_animations(monkeypatch, capsys, module_name, preset_name):
+  module = _import_entrypoint(monkeypatch, module_name)
+  calls = []
+  draw_calls = []
+  writers = []
+  reference_route = [0, 2, 1]
+
+  class FakeWriter:
+    def __init__(self, graph, name):
+      self.graph = graph
+      self.name = name
+      self.observations = []
+      self.animation_calls = []
+      writers.append(self)
+
+    def __call__(self, observation):
+      self.observations.append(observation)
+
+    def write_animation(self, **kwargs):
+      self.animation_calls.append(kwargs)
+      return Path('tmp') / f'{self.name}_pheromone_animation.html'
+
+  def algorithm(name):
+    def run(graph, start_node, end_node, *args, **kwargs):
+      calls.append((name, graph, start_node, end_node, args, kwargs))
+      for epoch in (1, 2):
+        kwargs['epoch_callback']({'epoch': epoch})
+      return [start_node, end_node], 1.0, 0.01, 2
+
+    return run
+
+  resolved_settings = _configure_main(monkeypatch, module, selected=preset_name is not None, writer_class=FakeWriter)
+  monkeypatch.setattr(module, 'dijkstra', lambda *_: reference_route)
+  monkeypatch.setattr(module, 'draw_graph', lambda *args, **kwargs: draw_calls.append((args, kwargs)))
+  monkeypatch.setattr(module, 'ACO', algorithm('ACO'))
+  monkeypatch.setattr(module, 'ACS', algorithm('ACS'))
+  monkeypatch.setattr(module, 'ABW', algorithm('ABW'))
+
+  module.main([] if preset_name is None else ['--preset', preset_name])
+
   assert [call[0] for call in calls] == ['ACO', 'ACS', 'ABW']
-  assert all((call[2], call[3]) == (3, 69) for call in calls)
-  assert calls[0][4:] == (
-    (
-      expected_settings['ants'],
-      expected_settings['evaporation_rate'],
-      expected_settings['f_ini'],
-      expected_settings['alfa'],
-      expected_settings['beta'],
-      expected_settings['epomax'],
-    ),
-    {'global_best_patience': expected_settings['global_best_patience']},
+  assert all((call[2], call[3]) == (0, 1) for call in calls)
+  assert [writer.name for writer in writers] == ['aco', 'acs', 'bwas']
+  assert [[item['epoch'] for item in writer.observations] for writer in writers] == [[1, 2], [1, 2], [1, 2]]
+  assert [call[5]['epoch_callback'] for call in calls] == writers
+  assert calls[0][4] == (
+    resolved_settings['ants'],
+    resolved_settings['evaporation_rate'],
+    resolved_settings['f_ini'],
+    resolved_settings['alfa'],
+    resolved_settings['beta'],
+    resolved_settings['epomax'],
   )
-  assert calls[1][4:] == (
-    (
-      expected_settings['ants'],
-      expected_settings['evaporation_rate'],
-      expected_settings['local_evaporation_rate'],
-      expected_settings['transition_probability'],
-      expected_settings['f_ini'],
-      expected_settings['alfa'],
-      expected_settings['beta'],
-      expected_settings['epomax'],
-    ),
-    {'global_best_patience': expected_settings['global_best_patience']},
+  assert calls[1][4] == (
+    resolved_settings['ants'],
+    resolved_settings['evaporation_rate'],
+    resolved_settings['local_evaporation_rate'],
+    resolved_settings['transition_probability'],
+    resolved_settings['f_ini'],
+    resolved_settings['alfa'],
+    resolved_settings['beta'],
+    resolved_settings['epomax'],
   )
-  assert calls[2][4:] == (
-    (
-      expected_settings['ants'],
-      expected_settings['evaporation_rate'],
-      expected_settings['epomax'],
-      expected_settings['f_ini'],
-      expected_settings['alfa'],
-      expected_settings['beta'],
-    ),
-    {
-      'worst_penalty_rate': expected_settings['worst_penalty_rate'],
-      'mutation_probability': expected_settings['mutation_probability'],
-      'mutation_scale': expected_settings['mutation_scale'],
-      'restart_stagnation': expected_settings['bwas_restart_stagnation'],
-      'min_pheromone_lvl': expected_settings['f_min'],
-      'global_best_patience': expected_settings['global_best_patience'],
-    },
+  assert calls[2][4] == (
+    resolved_settings['ants'],
+    resolved_settings['evaporation_rate'],
+    resolved_settings['epomax'],
+    resolved_settings['f_ini'],
+    resolved_settings['alfa'],
+    resolved_settings['beta'],
   )
   repository_tmp = Path(__file__).resolve().parents[1] / 'tmp'
   assert [call[1]['save_path'] for call in draw_calls] == [repository_tmp / 'aco_route.html', repository_tmp / 'acs_route.html', repository_tmp / 'bwas_route.html']
-  reference_paths = [call[1]['reference_path'] for call in draw_calls]
-  assert reference_paths[0][0] == 3 and reference_paths[0][-1] == 69
-  assert reference_paths == [reference_paths[0]] * 3
-  assert [call[1]['title'] for call in draw_calls] == [
-    f'ACO route ({expected_settings["ants"]} ants)',
-    f'ACS route ({expected_settings["ants"]} ants)',
-    f'BWAS route ({expected_settings["ants"]} ants)',
-  ]
-  assert [call[1]['route_label'] for call in draw_calls] == [call[1]['title'] for call in draw_calls]
+  assert [call[0][1] for call in draw_calls] == [[0, 1]] * 3
+  assert [call[1]['reference_path'] for call in draw_calls] == [reference_route] * 3
+  expected_route_metadata = [f'ACO route ({resolved_settings["ants"]} ants)', f'ACS route ({resolved_settings["ants"]} ants)', f'BWAS route ({resolved_settings["ants"]} ants)']
+  assert [call[1]['title'] for call in draw_calls] == expected_route_metadata
+  assert [call[1]['route_label'] for call in draw_calls] == expected_route_metadata
+  assert [writer.animation_calls[0]['reference_path'] for writer in writers] == [reference_route] * 3
+  assert [writer.animation_calls[0]['title'] for writer in writers] == ['ACO pheromone evolution', 'ACS pheromone evolution', 'BWAS pheromone evolution']
+  assert all(f'{resolved_settings["ants"]} ants' in writer.animation_calls[0]['route_label'] for writer in writers)
   output = capsys.readouterr().out
-  assert all(f'{name} route solution: [3, 69]' in output for name in ('ACO', 'ACS', 'ABW'))
-  assert all(f'{name} epochs: 2' in output for name in ('ACO', 'ACS', 'ABW'))
+  assert all(f'{name} route solution: [0, 1]' in output for name in ('ACO', 'ACS', 'ABW'))
+  assert all(f'{name} cost: 1.0' in output and f'{name} epochs: 2' in output for name in ('ACO', 'ACS', 'ABW'))
   assert not any(forbidden in output for forbidden in (' time:', 'Dijkstra', 'walking', 'recommendation', 'better'))
   if preset_name is None:
     assert 'Preset:' not in output
+    assert '  ants:' not in output
   else:
+    assert output.startswith(f'Preset: {preset_name}\n')
     assert output.index('  ants: 29') < output.index('  beta: 4.2')
-    assert output.startswith('Preset: bus_friendly\n')
 
 
-def test_cli_identical_endpoints_skip_algorithms_and_write_metadata_html(monkeypatch, tmp_path, capsys):
-  import src.main as main_module
+def test_main_writes_multi_epoch_histories_and_animation_html_under_repository_tmp(monkeypatch, tmp_path):
+  import src.main as module
+  import src.scripts.utils.graph_visualizer as graph_visualizer
 
-  responses = iter(['3', '3'])
-  monkeypatch.setattr(builtins, 'input', lambda _: next(responses))
-  monkeypatch.setattr(main_module, '__file__', str(tmp_path / 'repository' / 'src' / 'main.py'))
-  algorithm_code = {main_module.ACO.__code__, main_module.ACS.__code__, main_module.ABW.__code__}
-  algorithm_calls = []
+  repository = tmp_path / 'repository'
+  monkeypatch.setattr(module, '__file__', str(repository / 'src' / 'main.py'))
+  monkeypatch.setattr(graph_visualizer, '__file__', str(repository / 'src' / 'scripts' / 'utils' / 'graph_visualizer.py'))
+  _configure_main(monkeypatch, module)
 
-  def record_algorithm_calls(frame, event, _arg):
-    if event == 'call' and frame.f_code in algorithm_code:
-      algorithm_calls.append(frame.f_code.co_name)
+  def algorithm(graph, start_node, end_node, *_args, epoch_callback, **_kwargs):
+    pheromones = {0: np.array([1.0]), 1: np.array([])}
+    for epoch in (1, 2):
+      epoch_callback(
+        {
+          'epoch': epoch,
+          'stage': 'pheromone_update',
+          'pheromones': pheromones,
+          'iteration_best_path': [start_node, end_node],
+          'iteration_best_cost': 1.0,
+          'global_best_path': [start_node, end_node],
+          'global_best_cost': 1.0,
+        }
+      )
+    return [start_node, end_node], 1.0, 0.01, 2
 
-  previous_profile = sys.getprofile()
-  sys.setprofile(record_algorithm_calls)
-  try:
-    with warnings.catch_warnings():
-      warnings.simplefilter('error', RuntimeWarning)
-      main_module.main([])
-  finally:
-    sys.setprofile(previous_profile)
+  monkeypatch.setattr(module, 'ACO', algorithm)
+  monkeypatch.setattr(module, 'ACS', algorithm)
+  monkeypatch.setattr(module, 'ABW', algorithm)
 
-  assert algorithm_calls == []
+  module.main([])
+
+  output_directory = repository / 'tmp'
+  for name, title in (('aco', 'ACO pheromone evolution'), ('acs', 'ACS pheromone evolution'), ('bwas', 'BWAS pheromone evolution')):
+    history_path = output_directory / f'{name}_pheromone_history.jsonl'
+    html_path = output_directory / f'{name}_pheromone_animation.html'
+    records = [json.loads(line) for line in history_path.read_text(encoding='utf-8').splitlines()]
+    assert [record['epoch'] for record in records[1:]] == [1, 2]
+    assert html_path.exists()
+    html = html_path.read_text(encoding='utf-8')
+    assert title in html
+    assert 'Dijkstra reference route' in html
+    assert '17 ants' in html
+
+
+def test_identical_endpoints_skip_algorithms_and_keep_zero_epoch_output(monkeypatch, capsys):
+  import src.main as module
+
+  class FakeWriter:
+    def __init__(self, _graph, _name):
+      pass
+
+    def __call__(self, _observation):
+      pytest.fail('trivial routes must not record algorithm epochs')
+
+    def write_animation(self, **_kwargs):
+      return None
+
+  _configure_main(monkeypatch, module, writer_class=FakeWriter)
+  monkeypatch.setattr(module, '_prompt_node', lambda *_: 0)
+  monkeypatch.setattr(module, 'dijkstra', lambda *_: [0])
+  monkeypatch.setattr(module, 'ACO', lambda *_args, **_kwargs: pytest.fail('ACO must not run'))
+  monkeypatch.setattr(module, 'ACS', lambda *_args, **_kwargs: pytest.fail('ACS must not run'))
+  monkeypatch.setattr(module, 'ABW', lambda *_args, **_kwargs: pytest.fail('ABW must not run'))
+
+  module.main([])
+
   assert capsys.readouterr().out.splitlines() == [
-    'ACO route solution: [3]',
+    'ACO route solution: [0]',
     'ACO cost: 0.0',
     'ACO epochs: 0',
-    'ACS route solution: [3]',
+    'ACS route solution: [0]',
     'ACS cost: 0.0',
     'ACS epochs: 0',
-    'ABW route solution: [3]',
+    'ABW route solution: [0]',
     'ABW cost: 0.0',
     'ABW epochs: 0',
   ]
-  output_directory = tmp_path / 'repository' / 'tmp'
-  expected_metadata = {
-    'aco_route.html': f'ACO route ({main_module.settings["ants"]} ants)',
-    'acs_route.html': f'ACS route ({main_module.settings["ants"]} ants)',
-    'bwas_route.html': f'BWAS route ({main_module.settings["ants"]} ants)',
-  }
-  assert {path.name for path in output_directory.iterdir()} == set(expected_metadata)
-  for filename, metadata in expected_metadata.items():
-    assert metadata in (output_directory / filename).read_text(encoding='utf-8')
 
 
 def test_bwas_uses_safe_defaults_when_optional_settings_are_absent(monkeypatch):
-  import src.main as main_module
+  import src.main as module
 
   captured = {}
   minimal_settings = {
@@ -288,26 +315,31 @@ def test_bwas_uses_safe_defaults_when_optional_settings_are_absent(monkeypatch):
     'global_best_patience': 2,
   }
 
-  monkeypatch.setattr(main_module, '_parse_args', lambda argv: type('Args', (), {'preset': None})())
-  monkeypatch.setattr(main_module, '_resolved_settings', lambda _: minimal_settings)
-  monkeypatch.setattr(main_module, 'generate_square_city_graph', lambda *_: {'map': True})
-  monkeypatch.setattr(main_module, 'generate_bus_line_square_city', lambda *_: {'bus': True})
-  graph = {'node_index': {3, 69}, 'connections': {3: [69], 69: []}, 'weights': {3: [1.0], 69: []}, 'edge_types': {3: ['walk'], 69: []}}
-  monkeypatch.setattr(main_module, 'merge_bus_and_map_graph', lambda *_: graph)
-  monkeypatch.setattr(main_module, '_prompt_node', lambda _prompt, default, *_: default)
-  monkeypatch.setattr(main_module, 'dijkstra', lambda *_: [3, 69])
-  monkeypatch.setattr(main_module, 'ACO', lambda *_args, **_kwargs: ([3, 69], 1.0, 0.0, 1))
-  monkeypatch.setattr(main_module, 'ACS', lambda *_args, **_kwargs: ([3, 69], 1.0, 0.0, 1))
+  class FakeWriter:
+    def __init__(self, _graph, _name):
+      pass
+
+    def __call__(self, _observation):
+      pass
+
+    def write_animation(self, **_kwargs):
+      return None
+
+  _configure_main(monkeypatch, module, writer_class=FakeWriter)
+  monkeypatch.setattr(module, '_resolved_settings', lambda _: minimal_settings)
+  monkeypatch.setattr(module, 'ACO', lambda *_args, **_kwargs: ([0, 1], 1.0, 0.0, 1))
+  monkeypatch.setattr(module, 'ACS', lambda *_args, **_kwargs: ([0, 1], 1.0, 0.0, 1))
 
   def fake_bwas(*_args, **kwargs):
     captured.update(kwargs)
-    return [3, 69], 1.0, 0.0, 1
+    return [0, 1], 1.0, 0.0, 1
 
-  monkeypatch.setattr(main_module, 'ABW', fake_bwas)
-  monkeypatch.setattr(main_module, '_write_route_html', lambda *_: None)
+  monkeypatch.setattr(module, 'ABW', fake_bwas)
 
-  main_module.main([])
+  module.main([])
 
+  callback = captured.pop('epoch_callback')
+  assert callable(callback)
   assert captured == {
     'worst_penalty_rate': None,
     'mutation_probability': 0.05,

@@ -1,9 +1,10 @@
 """Public routing boundary and quick interactive algorithm comparison."""
 
-import argparse
 import copy
 from dataclasses import dataclass
 from pathlib import Path
+
+from src.scripts.utils.graph_visualizer import ExperimentOutputWriter
 
 if __package__:
   from .configuration.algorithm_settings import load_profile, presets, settings
@@ -40,6 +41,7 @@ class RoutingProblem:
   start_node: object
   end_node: object
 
+
 def prepare_routing_problem(graph, start_node, end_node):
   """Validate and normalize public graph inputs at the experiment boundary.
 
@@ -75,6 +77,26 @@ def _prompt_node(prompt_text, default, min_node, max_node):
       return value
     print(f'Please enter a value between {min_node} and {max_node}.')
 
+
+def _prompt_preset(prompt_text):
+  """Prompt until the user supplies an algorithm preset."""
+  while True:
+    print('Available Presets:')
+    for key in presets.keys():
+      print(f'  - {key}')
+
+    value = input(f'\n{prompt_text} [Press Enter for default]: ').strip()
+
+    if value == '':
+      return dict(settings)
+
+    profile = presets.get(value)
+    while not profile:
+      print('Please enter a valid preset or empty for default.')
+
+    return load_profile(value)
+
+
 def _print_algorithm_result(name, result):
   path, cost, _, epochs = result
   print(f'{name} route solution:', path)
@@ -82,13 +104,7 @@ def _print_algorithm_result(name, result):
   print(f'{name} epochs:', epochs)
 
 
-def _parse_args(argv=None):
-  parser = argparse.ArgumentParser(description='Compare ant-colony routes on the toy city graph.')
-  parser.add_argument('--preset', choices=tuple(presets), help='algorithm settings preset')
-  return parser.parse_args(argv)
-
-def _print_preset(preset_name, algorithm_settings):
-  print(f'Preset: {preset_name}')
+def _print_preset(algorithm_settings):
   for key in sorted(algorithm_settings):
     print(f'  {key}: {algorithm_settings[key]}')
 
@@ -102,14 +118,12 @@ def _write_route_html(graph, reference_route, algorithm_name, result, ant_count)
 
 
 def main(argv=None):
-  """Run the lightweight interactive ACO, ACS, and BWAS demo."""
-  args = _parse_args(argv)
-  algorithm_settings = (settings) if args.preset is None else load_profile(args.preset)
-  if args.preset is not None:
-    _print_preset(args.preset, algorithm_settings)
-
   size = 20
   fixed_weight = 1
+
+  algorithm_settings = _prompt_preset('preset option')
+  _print_preset(algorithm_settings)
+
   map_graph = generate_square_city_graph(size, fixed_weight)
   buses_graph = generate_bus_line_square_city(size, fixed_weight)
   full_graph = merge_bus_and_map_graph(map_graph, buses_graph)
@@ -123,7 +137,11 @@ def main(argv=None):
 
   while start_node == end_node:
     end_node = _prompt_node('Enter end node different from start node', 69, 0, size * size - 1)
-  
+
+  aco_output = ExperimentOutputWriter(full_graph, 'aco')
+  acs_output = ExperimentOutputWriter(full_graph, 'acs')
+  bwas_output = ExperimentOutputWriter(full_graph, 'bwas')
+
   aco_result = ACO(
     problem.graph,
     start_node,
@@ -135,6 +153,7 @@ def main(argv=None):
     algorithm_settings['beta'],
     algorithm_settings['epomax'],
     global_best_patience=algorithm_settings['global_best_patience'],
+    epoch_callback=aco_output,
   )
   acs_result = ACS(
     problem.graph,
@@ -149,6 +168,7 @@ def main(argv=None):
     algorithm_settings['beta'],
     algorithm_settings['epomax'],
     global_best_patience=algorithm_settings['global_best_patience'],
+    epoch_callback=acs_output,
   )
   bwas_result = ABW(
     problem.graph,
@@ -166,11 +186,15 @@ def main(argv=None):
     restart_stagnation=algorithm_settings.get('bwas_restart_stagnation'),
     min_pheromone_lvl=algorithm_settings.get('f_min'),
     global_best_patience=algorithm_settings['global_best_patience'],
+    epoch_callback=bwas_output,
   )
 
   for name, result in (('ACO', aco_result), ('ACS', acs_result), ('ABW', bwas_result)):
     _print_algorithm_result(name, result)
-    _write_route_html(problem.graph, reference_route, name, result, algorithm_settings['ants'])
+
+  aco_output.write_animation(reference_path=reference_route, title='ACO pheromone evolution', route_label=f'ACO global best-found route ({algorithm_settings["ants"]} ants)')
+  acs_output.write_animation(reference_path=reference_route, title='ACS pheromone evolution', route_label=f'ACS global best-found route ({algorithm_settings["ants"]} ants)')
+  bwas_output.write_animation(reference_path=reference_route, title='BWAS pheromone evolution', route_label=f'BWAS global best-found route ({algorithm_settings["ants"]} ants)')
 
 
 if __name__ == '__main__':

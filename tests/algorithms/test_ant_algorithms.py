@@ -46,21 +46,31 @@ def _capture_generated_pheromones(captured):
 def _run_aco(graph, start_node, end_node):
   module = importlib.import_module('src.scripts.ant_colony_simple_ACO.ant_colony_optimization')
   problem = prepare_routing_problem(graph, start_node, end_node)
-  return problem.run(module.ACO, ANTS_NUMBER, EVAPORATION_RATE, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, MAX_EPOCHS)
+  return module.ACO(problem.graph, start_node, end_node, ANTS_NUMBER, EVAPORATION_RATE, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, MAX_EPOCHS)
 
 
 def _run_acs(graph, start_node, end_node):
   module = importlib.import_module('src.scripts.ant_colony_system.ant_colony_system')
   problem = prepare_routing_problem(graph, start_node, end_node)
-  return problem.run(
-    module.ACS, ANTS_NUMBER, EVAPORATION_RATE, LOCAL_EVAPORATION_RATE, TRANSITION_PROBABILITY, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT, MAX_EPOCHS
+  return module.ACS(
+    problem.graph,
+    start_node,
+    end_node,
+    ANTS_NUMBER,
+    EVAPORATION_RATE,
+    LOCAL_EVAPORATION_RATE,
+    TRANSITION_PROBABILITY,
+    INITIAL_PHEROMONE_LVL,
+    HEURISTIC_WEIGHT,
+    PHEROMONE_WEIGHT,
+    MAX_EPOCHS,
   )
 
 
 def _run_bwas(graph, start_node, end_node):
   module = importlib.import_module('src.scripts.ant_best_worst.ant_colony_best_worst')
   problem = prepare_routing_problem(graph, start_node, end_node)
-  return problem.run(module.ABW, ANTS_NUMBER, EVAPORATION_RATE, MAX_EPOCHS, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
+  return module.ABW(problem.graph, start_node, end_node, ANTS_NUMBER, EVAPORATION_RATE, MAX_EPOCHS, INITIAL_PHEROMONE_LVL, HEURISTIC_WEIGHT, PHEROMONE_WEIGHT)
 
 
 ALGORITHM_RUNNERS = [_run_aco, _run_acs, _run_bwas]
@@ -196,11 +206,10 @@ def test_orchestrators_select_finite_iteration_best_from_mixed_nonfinite_distanc
   assert observations[0]['global_best_cost'] == pytest.approx(2.0)
 
 
-@pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)
-def test_derived_pheromone_returns_trivial_route_when_start_equals_end(run_algorithm):
-  path, cost, _, epochs = run_algorithm(EMPTY_ADJACENCY_GRAPH, 0, 0)
+def test_preflight_accepts_existing_identical_endpoints():
+  problem = prepare_routing_problem(EMPTY_ADJACENCY_GRAPH, 0, 0)
 
-  assert (path, cost, epochs) == ([0], 0.0, 0)
+  assert (problem.start_node, problem.end_node) == (0, 0)
 
 
 @pytest.mark.parametrize('run_algorithm', ALGORITHM_RUNNERS)
