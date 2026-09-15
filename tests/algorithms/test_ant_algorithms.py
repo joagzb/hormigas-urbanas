@@ -8,7 +8,7 @@ import pytest
 from src.scripts.ant_best_worst.ant_solution_ABW import ant_solution_best_worst
 from src.scripts.ant_colony_simple_ACO.ant_solution_ACO import ant_solution_ACO
 from src.scripts.ant_colony_system.ant_solution_ACS import ant_solution_ACS
-from src.scripts.main import prepare_routing_problem
+from src.main import prepare_routing_problem
 from src.scripts.utils.generators import generate_bus_line_square_city, generate_square_city_graph, merge_bus_and_map_graph
 from src.scripts.utils.graph_visualizer import PheromoneHistoryWriter, draw_pheromone_history, load_pheromone_history, stable_edge_order
 
