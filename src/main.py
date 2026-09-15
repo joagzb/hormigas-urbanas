@@ -1,10 +1,12 @@
 """Public routing boundary and quick interactive algorithm comparison."""
 
+import argparse
 import copy
 from dataclasses import dataclass
+from pathlib import Path
 
 if __package__:
-  from .configuration.algorithm_settings import settings
+  from .configuration.algorithm_settings import load_profile, presets, settings
   from .scripts.ant_best_worst.ant_colony_best_worst import ABW
   from .scripts.ant_colony_simple_ACO.ant_colony_optimization import ACO
   from .scripts.ant_colony_system.ant_colony_system import ACS
@@ -12,7 +14,7 @@ if __package__:
   from .scripts.utils.generators import generate_bus_line_square_city, generate_square_city_graph, merge_bus_and_map_graph, validate_graph
   from .scripts.utils.graph_visualizer import draw_graph
 else:
-  from configuration.algorithm_settings import settings
+  from configuration.algorithm_settings import load_profile, presets, settings
   from scripts.ant_best_worst.ant_colony_best_worst import ABW
   from scripts.ant_colony_simple_ACO.ant_colony_optimization import ACO
   from scripts.ant_colony_system.ant_colony_system import ACS
@@ -37,13 +39,6 @@ class RoutingProblem:
   graph: dict
   start_node: object
   end_node: object
-
-  def run(self, algorithm, *args, **kwargs):
-    """Run ``algorithm`` or return the boundary-owned trivial-route result."""
-    if self.start_node == self.end_node:
-      return [self.start_node], 0.0, 0.0, 0
-    return algorithm(self.graph, self.start_node, self.end_node, *args, **kwargs)
-
 
 def prepare_routing_problem(graph, start_node, end_node):
   """Validate and normalize public graph inputs at the experiment boundary.
@@ -80,38 +75,39 @@ def _prompt_node(prompt_text, default, min_node, max_node):
       return value
     print(f'Please enter a value between {min_node} and {max_node}.')
 
-
-def _compute_route_cost(graph, path):
-  """Return the sum of aligned edge weights, or infinity for no route."""
-  if path is None:
-    return float('inf')
-
-  total = 0.0
-  for start, end in zip(path, path[1:]):
-    edge_index = graph['connections'][start].index(end)
-    total += graph['weights'][start][edge_index]
-  return total
-
-
-def _route_recommendation(route_cost, walking_cost):
-  """Recommend the lower-cost Dijkstra option, preferring walking on ties."""
-  if route_cost == float('inf') and walking_cost == float('inf'):
-    return 'no route could be found.'
-  if walking_cost <= route_cost:
-    return "you'd better go by foot."
-  return "you'd better take the bus instead of walking."
-
-
 def _print_algorithm_result(name, result):
-  path, cost, elapsed, epochs = result
-  print(f'{name} route:', path)
+  path, cost, _, epochs = result
+  print(f'{name} route solution:', path)
   print(f'{name} cost:', cost)
-  print(f'{name} time:', elapsed)
   print(f'{name} epochs:', epochs)
 
 
-def main():
-  """Run the lightweight interactive Dijkstra, ACO, ACS, and ABW demo."""
+def _parse_args(argv=None):
+  parser = argparse.ArgumentParser(description='Compare ant-colony routes on the toy city graph.')
+  parser.add_argument('--preset', choices=tuple(presets), help='algorithm settings preset')
+  return parser.parse_args(argv)
+
+def _print_preset(preset_name, algorithm_settings):
+  print(f'Preset: {preset_name}')
+  for key in sorted(algorithm_settings):
+    print(f'  {key}: {algorithm_settings[key]}')
+
+
+def _write_route_html(graph, reference_route, algorithm_name, result, ant_count):
+  output_directory = Path(__file__).resolve().parents[1] / 'tmp'
+  output_directory.mkdir(parents=True, exist_ok=True)
+  display_name = 'BWAS' if algorithm_name == 'ABW' else algorithm_name
+  metadata = f'{display_name} route ({ant_count} ants)'
+  draw_graph(graph, result[0], save_path=output_directory / f'{display_name.lower()}_route.html', reference_path=reference_route, title=metadata, route_label=metadata)
+
+
+def main(argv=None):
+  """Run the lightweight interactive ACO, ACS, and BWAS demo."""
+  args = _parse_args(argv)
+  algorithm_settings = (settings) if args.preset is None else load_profile(args.preset)
+  if args.preset is not None:
+    _print_preset(args.preset, algorithm_settings)
+
   size = 20
   fixed_weight = 1
   map_graph = generate_square_city_graph(size, fixed_weight)
@@ -120,69 +116,61 @@ def main():
 
   start_node = _prompt_node('Enter start node', 3, 0, size * size - 1)
   end_node = _prompt_node('Enter end node', 69, 0, size * size - 1)
-  
+
   problem = prepare_routing_problem(full_graph, start_node, end_node)
 
-  route = dijkstra(problem.graph, start_node, end_node)
-  walking_route = dijkstra(map_graph, start_node, end_node)
-  route_cost = _compute_route_cost(problem.graph, route)
-  walking_cost = _compute_route_cost(map_graph, walking_route)
+  reference_route = dijkstra(problem.graph, start_node, end_node)
 
-  draw_graph(problem.graph, route, save_path='toy_city_graph_solution.html')
-  draw_graph(map_graph, walking_route, save_path='toy_city_graph_solution_walking.html')
+  while start_node == end_node:
+    end_node = _prompt_node('Enter end node different from start node', 69, 0, size * size - 1)
+  
+  aco_result = ACO(
+    problem.graph,
+    start_node,
+    end_node,
+    algorithm_settings['ants'],
+    algorithm_settings['evaporation_rate'],
+    algorithm_settings['f_ini'],
+    algorithm_settings['alfa'],
+    algorithm_settings['beta'],
+    algorithm_settings['epomax'],
+    global_best_patience=algorithm_settings['global_best_patience'],
+  )
+  acs_result = ACS(
+    problem.graph,
+    start_node,
+    end_node,
+    algorithm_settings['ants'],
+    algorithm_settings['evaporation_rate'],
+    algorithm_settings['local_evaporation_rate'],
+    algorithm_settings['transition_probability'],
+    algorithm_settings['f_ini'],
+    algorithm_settings['alfa'],
+    algorithm_settings['beta'],
+    algorithm_settings['epomax'],
+    global_best_patience=algorithm_settings['global_best_patience'],
+  )
+  bwas_result = ABW(
+    problem.graph,
+    start_node,
+    end_node,
+    algorithm_settings['ants'],
+    algorithm_settings['evaporation_rate'],
+    algorithm_settings['epomax'],
+    algorithm_settings['f_ini'],
+    algorithm_settings['alfa'],
+    algorithm_settings['beta'],
+    worst_penalty_rate=algorithm_settings.get('worst_penalty_rate'),
+    mutation_probability=algorithm_settings.get('mutation_probability', 0.05),
+    mutation_scale=algorithm_settings.get('mutation_scale', 2.0),
+    restart_stagnation=algorithm_settings.get('bwas_restart_stagnation'),
+    min_pheromone_lvl=algorithm_settings.get('f_min'),
+    global_best_patience=algorithm_settings['global_best_patience'],
+  )
 
-  print('Dijkstra route:', route)
-  print('Dijkstra cost:', route_cost)
-  print('Dijkstra walking route:', walking_route)
-  print('Dijkstra walking cost:', walking_cost)
-  print(_route_recommendation(route_cost, walking_cost))
-
-  _print_algorithm_result(
-    'ACO',
-    problem.run(
-      ACO,
-      settings['ants'],
-      settings['evaporation_rate'],
-      settings['f_ini'],
-      settings['alfa'],
-      settings['beta'],
-      settings['epomax'],
-      global_best_patience=settings['global_best_patience'],
-    ),
-  )
-  _print_algorithm_result(
-    'ACS',
-    problem.run(
-      ACS,
-      settings['ants'],
-      settings['evaporation_rate'],
-      settings['local_evaporation_rate'],
-      settings['transition_probability'],
-      settings['f_ini'],
-      settings['alfa'],
-      settings['beta'],
-      settings['epomax'],
-      global_best_patience=settings['global_best_patience'],
-    ),
-  )
-  _print_algorithm_result(
-    'ABW',
-    problem.run(
-      ABW,
-      settings['ants'],
-      settings['evaporation_rate'],
-      settings['epomax'],
-      settings['f_ini'],
-      settings['alfa'],
-      settings['beta'],
-      worst_penalty_rate=settings['worst_penalty_rate'],
-      mutation_probability=settings['mutation_probability'],
-      mutation_scale=settings['mutation_scale'],
-      restart_stagnation=settings['bwas_restart_stagnation'],
-      min_pheromone_lvl=settings['f_min'],
-      global_best_patience=settings['global_best_patience'],
-    ),
-  )
+  for name, result in (('ACO', aco_result), ('ACS', acs_result), ('ABW', bwas_result)):
+    _print_algorithm_result(name, result)
+    _write_route_html(problem.graph, reference_route, name, result, algorithm_settings['ants'])
 
 
 if __name__ == '__main__':

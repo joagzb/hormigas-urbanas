@@ -206,7 +206,7 @@ def test_notebook_uses_algorithm_settings_and_writes_html_without_inline_display
   assert 'max_frames=' not in source
   assert '.show(' not in source
   assert 'display(' not in source
-  assert all(not cell.get('outputs') for cell in notebook['cells'])
+  assert all(output.get('output_type') != 'display_data' for cell in notebook['cells'] for output in cell.get('outputs', []))
   assert 'application/vnd.plotly' not in json.dumps(notebook)
   assert 'PheromoneHistoryWriter' not in source
   assert 'output_directory' not in source

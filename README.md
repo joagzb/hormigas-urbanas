@@ -29,11 +29,13 @@ More details about the methodology can be found at:
    ```
    The equivalent command from inside `src/` is `python -m main`.
 
+The demo writes `aco_route.html`, `acs_route.html`, and `bwas_route.html` to the repository-root `tmp/` directory. Each interactive HTML title and route legend identifies the algorithm and configured ant count.
+
 ## Notebook experiment
 
 Open `src/TPF.ipynb` from either the repository root or `src/` after activating the project environment. The notebook does not rewrite import or output roots. It loads algorithm-specific profiles from `src/configuration/algorithm_settings.py`; use the lightweight CLI above for the base 20-ant, 100-epoch settings.
 
-Visual Results are later generated at `<working_directory>/tmp`, records each algorithm's JSONL history, and writes its interactive animation there.
+Visual results are generated under the repository-root `tmp/` directory. The notebook records each algorithm's JSONL history and writes its interactive animation there.
 
 ## Running tests
 

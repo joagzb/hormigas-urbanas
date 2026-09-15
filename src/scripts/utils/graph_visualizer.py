@@ -47,6 +47,11 @@ HISTORY_FORMAT = 'urban-ants-pheromone-history'
 HISTORY_VERSION = 1
 
 
+def calculate_animation_stride(total_iterations):
+  """Return a bounded stride that keeps approximately 100 animation frames."""
+  return max(1, min(10, math.ceil(total_iterations / 100)))
+
+
 def _node_order(graph_dict):
   return tuple(sorted(graph_dict['node_index'], key=_node_sort_key))
 
@@ -147,10 +152,10 @@ class PheromoneHistoryWriter:
 
 
 class ExperimentOutputWriter:
-  """Own one algorithm's generated history and animation under ``cwd/tmp``.
+  """Own one algorithm's generated history and animation under repository ``tmp``.
 
   ``graph_dict`` supplies stable edge and opaque-node alignment, while ``name``
-  becomes the generated file prefix. Construction creates ``Path.cwd().parent/tmp``
+  becomes the generated file prefix. Construction creates repository ``tmp``
   and a private ``PheromoneHistoryWriter``. Calling the instance records an
   epoch; ``write_animation`` loads that history and writes the matching HTML.
   """
@@ -160,7 +165,7 @@ class ExperimentOutputWriter:
       raise ValueError('output name must contain lowercase letters, numbers, underscores, or hyphens only')
     self.graph_dict = graph_dict
     self.name = name
-    self.output_directory = Path.cwd().parent / 'tmp'
+    self.output_directory = Path(__file__).resolve().parents[3] / 'tmp'
     self.output_directory.mkdir(parents=True, exist_ok=True)
     self.history_path = self.output_directory / f'{name}_pheromone_history.jsonl'
     self.html_path = self.output_directory / f'{name}_pheromone_animation.html'
@@ -170,15 +175,24 @@ class ExperimentOutputWriter:
     """Append one final algorithm observation to this output's JSONL history."""
     self._history_writer(observation)
 
-  def write_animation(self, *, reference_path=None, title='Pheromone evolution', stride=1, max_frames=100, pheromone_bins=6):
+  def write_animation(self, *, reference_path=None, title='Pheromone evolution', route_label='Global best-found route', stride=None, max_frames=100, pheromone_bins=6):
     """Build and write the configured HTML animation, returning its path.
 
     ``reference_path`` may contain the graph's opaque IDs. Sampling arguments
     are forwarded to the validated history loader. This method performs file
     I/O but never displays the Plotly figure inline.
     """
+    resolved_stride = calculate_animation_stride(self._history_writer._last_epoch) if stride is None else stride
     figure = draw_pheromone_history(
-      self.graph_dict, self.history_path, reference_path=reference_path, title=title, stride=stride, max_frames=max_frames, pheromone_bins=pheromone_bins, show=False
+      self.graph_dict,
+      self.history_path,
+      reference_path=reference_path,
+      title=title,
+      route_label=route_label,
+      stride=resolved_stride,
+      max_frames=max_frames,
+      pheromone_bins=pheromone_bins,
+      show=False,
     )
     figure.write_html(self.html_path)
     return self.html_path
@@ -418,7 +432,7 @@ def _node_trace(graph_nx, positions):
   )
 
 
-def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=None, title='Pheromone evolution', pheromone_bins=6):
+def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=None, title='Pheromone evolution', route_label='Global best-found route', pheromone_bins=6):
   """Build a minimal route animation from bounded post-update snapshots.
 
   ``reference_path`` is supplied externally and represents a Dijkstra shortest
@@ -457,7 +471,7 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
     return [
       _structural_edge_trace(edges, positions),
       _route_trace(reference_path, positions, name='Dijkstra reference route', color='#2ecc71', dash='dash', width=3),
-      _route_trace(snapshot.get('global_best_path'), positions, name='Global best-found route', color='#e74c3c'),
+      _route_trace(snapshot.get('global_best_path'), positions, name=route_label, color='#e74c3c'),
       _node_trace(graph_nx, positions),
     ]
 
@@ -468,7 +482,7 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
     for snapshot in snapshots:
       frame_name = str(snapshot['epoch'])
       frame_label = f'Iteration {snapshot["epoch"]}'
-      frame_title = frame_label
+      frame_title = f'{title} - {frame_label}'
       frames.append(go.Frame(name=frame_name, data=frame_traces(snapshot), layout=go.Layout(title={'text': frame_title})))
       slider_steps.append(
         {'label': frame_label, 'method': 'animate', 'args': [[frame_name], {'mode': 'immediate', 'frame': {'duration': 0, 'redraw': False}, 'transition': {'duration': 0}}]}
@@ -476,7 +490,7 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
 
   first_snapshot = snapshots[0]
   layout = go.Layout(
-    title={'text': f'Iteration {first_snapshot["epoch"]}'},
+    title={'text': f'{title} - Iteration {first_snapshot["epoch"]}'},
     hovermode=False,
     template='plotly_white',
     showlegend=True,
@@ -504,17 +518,34 @@ def build_pheromone_animation(graph_dict: dict, snapshots, *, reference_path=Non
 
 
 def draw_pheromone_history(
-  graph_dict: dict, history_path, *, reference_path=None, title='Pheromone evolution', stride: int = 1, max_frames: int = 100, pheromone_bins: int = 6, show: bool = True
+  graph_dict: dict,
+  history_path,
+  *,
+  reference_path=None,
+  title='Pheromone evolution',
+  route_label='Global best-found route',
+  stride: int = 1,
+  max_frames: int = 100,
+  pheromone_bins: int = 6,
+  show: bool = True,
 ):
   """Load a validated JSONL history and build its Plotly animation."""
   snapshots = load_pheromone_history(graph_dict, history_path, stride=stride, max_frames=max_frames)
-  figure = build_pheromone_animation(graph_dict, snapshots, reference_path=reference_path, title=title, pheromone_bins=pheromone_bins)
+  figure = build_pheromone_animation(graph_dict, snapshots, reference_path=reference_path, title=title, route_label=route_label, pheromone_bins=pheromone_bins)
   if show:
     figure.show()
   return figure
 
 
-def draw_graph(graph: dict, path: Optional[List[Hashable]] = None, save_path: Optional[str] = None):
+def draw_graph(
+  graph: dict,
+  path: Optional[List[Hashable]] = None,
+  save_path: Optional[str] = None,
+  *,
+  reference_path: Optional[List[Hashable]] = None,
+  title: str = 'Directed city graph',
+  route_label: str = 'Global best-found route',
+):
   """Display a Plotly graph and optionally highlight a best-found route.
 
   Interactive exports use HTML and do not require Kaleido.
@@ -527,7 +558,7 @@ def draw_graph(graph: dict, path: Optional[List[Hashable]] = None, save_path: Op
     'global_best_path': _copy_path(path),
     'restarted': False,
   }
-  figure = build_pheromone_animation(graph, [snapshot], title='Directed city graph')
+  figure = build_pheromone_animation(graph, [snapshot], reference_path=reference_path, title=title, route_label=route_label)
   if save_path:
     output_path = Path(save_path)
     if output_path.suffix.lower() not in {'.html', '.htm'}:

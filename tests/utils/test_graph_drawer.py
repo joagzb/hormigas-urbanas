@@ -3,6 +3,7 @@ import json
 import numpy as np
 import plotly.graph_objects as go
 import pytest
+import src.scripts.utils.graph_visualizer as graph_visualizer
 
 from src.scripts.utils.graph_visualizer import (
   ExperimentOutputWriter,
@@ -32,6 +33,15 @@ def test_draw_graph_writes_interactive_html(tmp_path):
   assert isinstance(figure, go.Figure)
   assert output_path.exists()
   assert 'plotly' in output_path.read_text(encoding='utf-8').lower()
+
+
+def test_draw_graph_respects_algorithm_title_route_label_and_reference():
+  graph = {'node_index': {0, 1, 2}, 'connections': {0: [1], 1: [2], 2: []}, 'weights': {0: [2.0], 1: [3.0], 2: []}}
+
+  figure = draw_graph(graph, path=[0, 1, 2], reference_path=[0, 1], title='ACO route (20 ants)', route_label='ACO route (20 ants)')
+
+  assert figure.layout.title.text == 'ACO route (20 ants) - Iteration 0'
+  assert [trace.name for trace in figure.data] == ['Structural graph edges', 'Dijkstra reference route', 'ACO route (20 ants)', 'Nodes']
 
 
 def test_bus_node_style_comes_from_service_metadata():
@@ -252,8 +262,8 @@ def test_draw_history_builds_minimal_route_frames_without_showing(tmp_path, monk
   assert len(figure.layout.updatemenus[0].buttons) == 2
   assert [step.label for step in figure.layout.sliders[0].steps] == ['Iteration 1', 'Iteration 2']
   assert [frame.name for frame in figure.frames] == ['1', '2']
-  assert [frame.layout.title.text for frame in figure.frames] == ['Iteration 1', 'Iteration 2']
-  assert figure.layout.title.text == 'Iteration 1'
+  assert [frame.layout.title.text for frame in figure.frames] == ['Hidden algorithm details - Iteration 1', 'Hidden algorithm details - Iteration 2']
+  assert figure.layout.title.text == 'Hidden algorithm details - Iteration 1'
   assert [trace.name for trace in figure.frames[0].data] == ['Structural graph edges', 'Dijkstra reference route', 'Global best-found route', 'Nodes']
   structural_edges = figure.frames[0].data[0]
   assert structural_edges.mode == 'lines'
@@ -268,7 +278,7 @@ def test_draw_history_builds_minimal_route_frames_without_showing(tmp_path, monk
   assert 'Iteration best-found route' not in serialized
   assert 'pheromone_update' not in serialized
   assert 'pheromones restarted' not in serialized
-  assert 'Hidden algorithm details' not in serialized
+  assert 'Hidden algorithm details' in serialized
   assert 'Type: board' not in serialized
   assert 'Type: ride' not in serialized
   assert 'Bus line:' not in serialized
@@ -290,22 +300,24 @@ def test_draw_history_writes_interactive_html_to_created_output_directory(tmp_pa
   assert 'plotly' in html_path.read_text(encoding='utf-8').lower()
 
 
-def test_experiment_output_writer_owns_cwd_tmp_paths_and_html(monkeypatch, tmp_path):
+def test_experiment_output_writer_owns_repository_tmp_paths_and_html(monkeypatch, tmp_path):
   graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
-  monkeypatch.chdir(tmp_path)
+  module_path = tmp_path / 'repository' / 'src' / 'scripts' / 'utils' / 'graph_visualizer.py'
+  monkeypatch.setattr(graph_visualizer, '__file__', str(module_path))
   output = ExperimentOutputWriter(graph, 'aco')
   output({'epoch': 1, 'pheromones': {0: np.array([1.0]), 1: np.array([])}})
 
   html_path = output.write_animation()
 
-  assert output.history_path == tmp_path / 'tmp' / 'aco_pheromone_history.jsonl'
-  assert html_path == tmp_path / 'tmp' / 'aco_pheromone_animation.html'
+  assert output.history_path == tmp_path / 'repository' / 'tmp' / 'aco_pheromone_history.jsonl'
+  assert html_path == tmp_path / 'repository' / 'tmp' / 'aco_pheromone_animation.html'
   assert html_path.exists()
 
 
 def test_experiment_output_writer_uses_adaptive_stride(monkeypatch, tmp_path):
   graph = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}}
-  monkeypatch.chdir(tmp_path)
+  module_path = tmp_path / 'repository' / 'src' / 'scripts' / 'utils' / 'graph_visualizer.py'
+  monkeypatch.setattr(graph_visualizer, '__file__', str(module_path))
   output = ExperimentOutputWriter(graph, 'aco')
   for epoch in range(1, 102):
     output({'epoch': epoch, 'pheromones': {0: np.array([1.0]), 1: np.array([])}})
@@ -344,5 +356,5 @@ def test_animation_handles_no_recorded_epochs_and_no_route():
   figure = build_pheromone_animation(graph, [], reference_path=None)
 
   assert not figure.frames
-  assert figure.layout.title.text == 'Iteration 0'
+  assert figure.layout.title.text == 'Pheromone evolution - Iteration 0'
   assert [trace.name for trace in figure.data] == ['Structural graph edges', 'Dijkstra reference route', 'Global best-found route', 'Nodes']
