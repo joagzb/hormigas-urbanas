@@ -2,8 +2,7 @@
 
 A route-finding experiment between two points in a city using walking and urban buses. Edge weights form one static generalized-cost score; they are not calibrated travel minutes or converted fares, and the model does not represent schedules or headways.
 
-More details about the methodology can be found at:
-- [Joaquin's portfolio](https://joagzb.com)
+More details about the methodology can be found at: [Joaquin's portfolio](https://joagzb.com)
 
 ## Technologies and libraries
 
@@ -39,11 +38,11 @@ Visual results are generated under the repository-root `tmp/` directory. The not
 
 ## Running tests
 
-After installing the dependencies, 
+After installing the dependencies, this step is required for running the tests
 
 ```bash
-   pip install pytest  # required for running the tests
-   ```
+pip install pytest
+```
 
 you can run the test suite with [pytest](https://docs.pytest.org/en/stable/) by directly running:
 
@@ -52,9 +51,6 @@ pytest
 ```
 
 ## Authors
-
-- Joaquin Gonzalez Budiño: <joa_gzb@hotmail.com>
-- Nicolas Giuliano: <nsgiuliano@gmail.com>
 
 - [LinkedIn Joaquin](https://www.linkedin.com/in/joaquin-gonzalez-budino/)
 - [LinkedIn Nicolas](https://www.linkedin.com/in/nicolás-giuliano-204a301a4/)

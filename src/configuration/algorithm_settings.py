@@ -1,14 +1,14 @@
 settings = {
-  'ants': 20,
+  'ants': 120,
   'f_ini': None,  # None for automatic tau0, or a positive finite value.
-  'f_min': 1e-6,  # Positive finite BWAS floor. Initialization and restarts clamp tau0 to this value.
-  'evaporation_rate': 0.1,  # Global evaporation rate in [0, 1].
-  'epomax': 100,  # Positive integer epoch limit.
+  'f_min': 1e-3,  # Positive finite BWAS floor. Initialization and restarts clamp tau0 to this value.
+  'evaporation_rate': 0.2,  # Global evaporation rate in [0, 1].
+  'epomax': 500,  # Positive integer epoch limit.
   'local_evaporation_rate': 0.1,  # ACS local evaporation rate in [0, 1].
-  'transition_probability': 0.9,  # ACS-only exploitation probability in [0, 1].
+  'transition_probability': 0.8,  # ACS-only exploitation probability in [0, 1].
   'alfa': 1.0,  # Finite, non-negative pheromone exponent.
   'beta': 2.0,  # Finite, non-negative inverse-cost exponent.
-  'global_best_patience': 10,
+  'global_best_patience': 20,
   'bwas_restart_stagnation': 8,  # Zero disables BWAS restarts; when enabled, use a positive value below global_best_patience.
   'worst_penalty_rate': 0.30,  # BWAS Extra worst-route evaporation rate in [0, 1].
   'mutation_probability': 0.08,  # BWAS Per-row mutation probability in [0, 1].
