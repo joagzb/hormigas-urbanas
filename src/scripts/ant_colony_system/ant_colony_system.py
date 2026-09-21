@@ -1,94 +1,163 @@
-import numpy as np
 from time import time
-from collections import Counter
+
+import numpy as np
+
+from ..utils.algorithm_observer import record_stage_data
+from ..utils.algorithm_validations import update_global_best, validate_global_best
+from ..utils.generators import deterministic_route_cost, generate_pheromone_map
 from .ant_solution_ACS import ant_solution_ACS
-from scripts.utils.generators import generate_pheromone_map
 
-def ACS(graph_map, start_node, end_node, ants_number, global_evap_rate, local_evap_rate, transition_prob, initial_pheromone_lvl, heuristic_weight, pheromone_weight, max_epochs: int = 500):
-    """
-    Executes the Ant Colony System (ACS) elitism that considers only the ant that
-    generated the best global solution, to find the best route between 2 nodes in a graph.
 
-    Parameters:
-    adj_matrix : numpy.ndarray
-        Adjacency matrix where adj_matrix[i, j] represents the cost between nodes i and j.
-    start : int
-        Starting node (nest).
-    end : int
-        Destination node (food source).
-    nro_ants : int
-        Number of ants (iterations) to perform.
-    global_evap_rate : float
-        Global pheromone evaporation rate in [0, 1].
-    local_evap_rate : float
-        Local pheromone evaporation rate in [0, 1] (exclusive to ACS).
-    transition_prob : float
-        Random transition probability parameter in [0, 1] (exclusive to ACS).
-    max_epochs : int
-        Maximum number of epochs (iterations) to run the algorithm.
-    initial_pheromone : float
-        Initial pheromone level on all edges.
-    pheromone_weight : float
-        Importance of pheromone information.
-    heuristic_weight : float
-        Importance of heuristic information.
+def ACS(
+  graph_map,
+  start_node,
+  end_node,
+  ants_number,
+  global_evap_rate,
+  local_evap_rate,
+  transition_prob,
+  initial_pheromone_lvl,
+  heuristic_weight,
+  pheromone_weight,
+  max_epochs: int = 500,
+  global_best_patience=10,
+  epoch_callback=None,
+):
+  """Find and retain the global-best route using Ant Colony System.
 
-    Returns:
-    Optimal path: list, total distance of the optimal path: float, execution time: float, number of epochs executed: int.
-    """
+  Parameters:
+  -----------
+  graph_map : dict
+      Preflighted graph containing opaque IDs and aligned ``connections``,
+      ``weights``, and ``edge_types`` mappings.
 
-    pheromone_graph = generate_pheromone_map(graph_map,initial_pheromone_lvl)
-    routes = [None] * ants_number  # Paths taken by each ant
-    distances = np.zeros(ants_number)
+  start_node : hashable
+      The opaque starting node ID (ant hill).
 
-    epochs = 0
-    counter = 0
+  end_node : hashable
+      The opaque destination node ID (food).
 
-    start_time = time()
-    while counter < ants_number and epochs < max_epochs:
-        # Each ant makes its journey
-        for ant in range(ants_number):
-            path_found, path_distance  = ant_solution_ACS(graph_map, pheromone_graph, start_node, end_node, transition_prob, heuristic_weight, pheromone_weight)
-            routes[ant] = path_found
-            distances[ant] = path_distance
+  ants_number : int
+      The number of ants used in each epoch.
 
-        # Global pheromone evaporation
-        for key in pheromone_graph:
-            pheromone_graph[key] *= (1 - global_evap_rate)
+  global_evap_rate : float
+      Evaporation rate used for the global-best pheromone update.
 
-        # Sort ants based on path distances
-        sorted_indices_by_ant_solution = np.argsort(distances)
-        best_ant = sorted_indices_by_ant_solution[0]
+  local_evap_rate : float
+      Evaporation rate applied as each edge is selected.
 
-        # Perform local pheromone update on the ant's path
-        for ant in range(ants_number):
-            if distances[ant] != np.inf:
-                for i in range(len(routes[ant])-1):
-                    current_path_node = routes[ant][i]
-                    next_path_node = routes[ant][i+1]
-                    indx_next_node = graph_map["connections"][current_path_node].index(next_path_node)
-                    pheromone_graph[current_path_node][indx_next_node] = ((1 - local_evap_rate) * pheromone_graph[current_path_node][indx_next_node]) + (local_evap_rate * (1 / distances[ant]))
+  transition_prob : float
+      Probability of selecting the strongest transition instead of roulette
+      selection.
 
-                    if(best_ant == ant): # Deposit pheromone on the paths of the best ant
-                        pheromone_graph[current_path_node][indx_next_node] = ((1 - global_evap_rate) * pheromone_graph[current_path_node][indx_next_node]) + (global_evap_rate * (1 / distances[best_ant]))
+  initial_pheromone_lvl : float or None
+      Initial pheromone level. If ``None``, an automatic baseline is derived
+      from a deterministic reference route. Consult the algorithm
+      documentation for the theoretical initialization formula.
 
-        # Analyze algorithm termination criteria
-        number_of_solutions = distances[distances != np.inf].size
-        if number_of_solutions > 0:
-            _, counter = Counter(distances[distances != np.inf]).most_common(1)[0]
+  heuristic_weight : float
+      Legacy positional name for alpha, the pheromone exponent.
 
-        epochs += 1
+  pheromone_weight : float
+      Legacy positional name for beta, the inverse-cost exponent.
 
-    finite_mask = distances != np.inf
-    if np.any(finite_mask):
-        best_idx = np.argmin(distances[finite_mask])
-        finite_indices = np.where(finite_mask)[0]
-        selected = finite_indices[best_idx]
-        optimal_path = routes[selected]
-        total_distance = distances[selected]
+  max_epochs : int
+      Maximum number of epochs to run.
+
+  global_best_patience : int
+      Consecutive completed epochs without strict global-best improvement
+      before stopping.
+
+  epoch_callback : callable or None
+      Optional observer called after each completed epoch with the final
+      ``pheromone_update`` observation.
+
+  Returns:
+  --------
+  path : list of hashable or None
+      The retained global-best route, or ``None`` if no route exists.
+
+  cost : float
+      Cost of the retained route, or ``np.inf`` when no route exists.
+
+  total_time : float
+      Execution time in seconds.
+
+  epochs : int
+      Number of completed epochs.
+  """
+  start_time = time()
+
+  # initial settings
+  validate_global_best(global_best_patience)
+
+  if initial_pheromone_lvl is None:
+    baseline_cost = deterministic_route_cost(graph_map, start_node, end_node)
+    if not np.isfinite(baseline_cost):
+      return None, np.inf, time() - start_time, 0
+    if baseline_cost == 0:
+      initial_pheromone_lvl = 1.0
     else:
-        optimal_path = routes[0]
-        total_distance = distances[0]
-    total_time = time() - start_time
+      initial_pheromone_lvl = 1 / (len(graph_map['node_index']) * baseline_cost)
 
-    return optimal_path, total_distance, total_time, epochs
+  alpha = heuristic_weight
+  beta = pheromone_weight
+  pheromone_graph = generate_pheromone_map(graph_map, initial_pheromone_lvl)
+  global_best_path = None
+  global_best_cost = np.inf
+  epochs = 0
+  epochs_without_global_best_improvement = 0
+
+  while epochs < max_epochs:
+    routes = [None] * ants_number
+    distances = np.full(ants_number, np.inf)
+    iteration_best_path = None
+    iteration_best_cost = np.inf
+
+    # each ant constructs a route
+    for ant in range(ants_number):
+      route, distance = ant_solution_ACS(graph_map, pheromone_graph, start_node, end_node, transition_prob, alpha, beta, local_evap_rate, initial_pheromone_lvl)
+
+      routes[ant] = route
+      distances[ant] = distance
+
+      # retain the best route
+      if np.isfinite(distance) and distance < iteration_best_cost:
+        iteration_best_path = route.copy()
+        iteration_best_cost = distance
+
+    improved, epochs_without_global_best_improvement = update_global_best(global_best_cost, iteration_best_cost, epochs_without_global_best_improvement)
+    if improved:
+      global_best_path = iteration_best_path.copy()
+      global_best_cost = iteration_best_cost
+
+    # Global pheromone evaporation and deposition on retained global-best edges
+    if global_best_path is not None:
+      if global_best_cost == 0:
+        deposit = 0.0
+      else:
+        deposit = 1 / global_best_cost
+      for current_node, next_node in zip(global_best_path, global_best_path[1:]):
+        edge_index = graph_map['connections'][current_node].index(next_node)
+        current_pheromone = pheromone_graph[current_node][edge_index]
+        pheromone_graph[current_node][edge_index] = (1 - global_evap_rate) * current_pheromone + global_evap_rate * deposit
+
+    # advance to next epoch
+    epochs += 1
+
+    # record epoch information
+    record_stage_data(
+      epoch_callback,
+      epoch=epochs,
+      stage='pheromone_update',
+      pheromones=pheromone_graph,
+      iteration_best_path=iteration_best_path,
+      iteration_best_cost=iteration_best_cost,
+      global_best_path=global_best_path,
+      global_best_cost=global_best_cost,
+    )
+
+    if epochs_without_global_best_improvement >= validate_global_best(global_best_patience):
+      break
+
+  return global_best_path, global_best_cost, time() - start_time, epochs

@@ -1,16 +1,15 @@
 # Urban Ants
 
-An optimal route-finding algorithm between two points in a city, minimizing both time and cost while considering urban public buses. The algorithm has been built following Ant Colony Optimization (ACO) methodology.
+A route-finding experiment between two points in a city using walking and urban buses. Edge weights form one static generalized-cost score; they are not calibrated travel minutes or converted fares, and the model does not represent schedules or headways.
 
-More details about the methodology can be found at:
-- [Joaquin's portfolio](https://joagzb.com)
+More details about the methodology can be found at: [Joaquin's portfolio](https://joagzb.com)
 
 ## Technologies and libraries
 
 - Python 3.x
 - NumPy (core algorithms)
 - NetworkX
-- Matplotlib
+- Plotly
 
 ## Getting started
 
@@ -23,35 +22,27 @@ More details about the methodology can be found at:
    ```bash
    pip install -r src/requirements.txt
    ```
-3. **Run a simple check**
-   The repository includes a quick example that can be executed as Python modules:
+3. **Run the interactive toy-city demo from the repository root**
    ```bash
-   python -m src.scripts.examples.toy_city_generators
+   python -m src.main
    ```
-   The script generates a toy square city (10x10), adds a bus line and prints an example
-   route demonstrating that.
+   The equivalent command from inside `src/` is `python -m main`.
 
-## Graph visualization
+The demo writes `aco_route.html`, `acs_route.html`, and `bwas_route.html` to the repository-root `tmp/` directory. Each interactive HTML title and route legend identifies the algorithm and configured ant count.
 
-Generate a random graph, calculate a route, and visualize it:
+## Notebook experiment
 
-```python
-from src.scripts.utils.route_finder import dijkstra
-from src.scripts.utils.graph_visualizer import draw_graph
+Open `src/TPF.ipynb` from either the repository root or `src/` after activating the project environment. The notebook does not rewrite import or output roots. It loads algorithm-specific profiles from `src/configuration/algorithm_settings.py`; use the lightweight CLI above for the base 20-ant, 100-epoch settings.
 
-path = dijkstra(graph, 0, 5)
-draw_graph(graph, path)
-```
-
-Bus nodes (IDs ≥ 1000) are shown in orange, and the selected path is drawn in red.
+Visual results are generated under the repository-root `tmp/` directory. The notebook records each algorithm's JSONL history and writes its interactive animation there.
 
 ## Running tests
 
-After installing the dependencies, 
+After installing the dependencies, this step is required for running the tests
 
 ```bash
-   pip install pytest  # required for running the tests
-   ```
+pip install pytest
+```
 
 you can run the test suite with [pytest](https://docs.pytest.org/en/stable/) by directly running:
 
@@ -60,9 +51,6 @@ pytest
 ```
 
 ## Authors
-
-- Joaquin Gonzalez Budiño: <joa_gzb@hotmail.com>
-- Nicolas Giuliano: <nsgiuliano@gmail.com>
 
 - [LinkedIn Joaquin](https://www.linkedin.com/in/joaquin-gonzalez-budino/)
 - [LinkedIn Nicolas](https://www.linkedin.com/in/nicolás-giuliano-204a301a4/)

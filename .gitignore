@@ -29,3 +29,13 @@ env
 
 # generated images
 *.png
+
+# Generated experiment histories
+/tmp/
+
+#cache folders
+.*
+
+# Generated skill registry
+AGENTS.md
+skills-lock.json
