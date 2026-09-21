@@ -4,6 +4,9 @@ A route-finding experiment between two points in a city using walking and urban 
 
 More details about the methodology can be found at: [Joaquin's portfolio](https://joagzb.com)
 
+## Technical details
+More technical in-depth details can be found at `/docs` folder or here [Technicals](https://github.com/joagzb/hormigas-urbanas/blob/master/docs/Urban%20Ants%20-%20A%20map%20routing%20algorithm.md)
+
 ## Technologies and libraries
 
 - Python 3.x
@@ -32,7 +35,7 @@ The demo writes `aco_route.html`, `acs_route.html`, and `bwas_route.html` to the
 
 ## Notebook experiment
 
-Open `src/TPF.ipynb` from either the repository root or `src/` after activating the project environment. The notebook does not rewrite import or output roots. It loads algorithm-specific profiles from `src/configuration/algorithm_settings.py`; use the lightweight CLI above for the base 20-ant, 100-epoch settings.
+Open `src/TPF.ipynb` from either the repository root or `src/` after activating the project environment. The notebook does not rewrite import or output roots. It loads algorithm-specific profiles from `src/configuration/algorithm_settings.py`.
 
 Visual results are generated under the repository-root `tmp/` directory. The notebook records each algorithm's JSONL history and writes its interactive animation there.
 
