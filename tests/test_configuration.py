@@ -43,11 +43,11 @@ def test_algorithm_settings_keys_and_values():
     else:
       assert value > 0
 
-  assert algorithm_settings.settings['f_min'] == 1e-6
-  assert algorithm_settings.settings['transition_probability'] == 0.9
+  assert algorithm_settings.settings['f_min'] == 1e-3
+  assert algorithm_settings.settings['transition_probability'] == 0.8
   assert algorithm_settings.settings['alfa'] == 1.0
   assert algorithm_settings.settings['beta'] == 2.0
-  assert algorithm_settings.settings['global_best_patience'] == 10
+  assert algorithm_settings.settings['global_best_patience'] == 20
   assert algorithm_settings.settings['bwas_restart_stagnation'] == 8
   assert algorithm_settings.settings['worst_penalty_rate'] == 0.30
   assert algorithm_settings.settings['mutation_probability'] == 0.08
@@ -150,7 +150,7 @@ def test_notebook_uses_algorithm_settings_and_writes_html_without_inline_display
       and node.value.func.id == 'load_profile'
     ):
       loaded_profiles[node.targets[0].id] = node.value.args[0].value
-  assert loaded_profiles == {'aco_settings': 'bus_friendly', 'acs_settings': 'acs_multimodal', 'bwas_settings': 'bwas_aggressive'}
+  assert loaded_profiles == {'aco_settings': '-', 'acs_settings': 'bus_friendly', 'bwas_settings': '-'}
 
   algorithm_calls = {node.func.id: node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {'ACO', 'ACS', 'ABW'}}
   assert [ast.unparse(argument) for argument in algorithm_calls['ACO'].args[3:]] == [
@@ -197,8 +197,8 @@ def test_notebook_uses_algorithm_settings_and_writes_html_without_inline_display
     'global_best_patience': "bwas_settings['global_best_patience']",
     'epoch_callback': 'bwas_output',
   }
-  assert algorithm_settings.settings['ants'] == 20
-  assert algorithm_settings.settings['epomax'] == 100
+  assert algorithm_settings.settings['ants'] == 120
+  assert algorithm_settings.settings['epomax'] == 500
   assert "experiment['ants']" not in source
   assert "experiment['epochs']" not in source
   assert source.count('.write_animation(') == 3

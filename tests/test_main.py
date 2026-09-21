@@ -1,13 +1,11 @@
 import builtins
-import importlib
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from src.main import _parse_args, _prompt_node, _resolved_settings, prepare_routing_problem
+from src.main import _prompt_node, prepare_routing_problem
 
 
 SIMPLE_GRAPH = {'node_index': {0, 1}, 'connections': {0: [1], 1: []}, 'weights': {0: [1.0], 1: []}, 'edge_types': {0: ['walk'], 1: []}}
@@ -60,22 +58,35 @@ def test_preflight_preserves_opaque_mixed_ids():
   assert problem.graph is not graph
 
 
-def test_default_settings_are_a_fresh_copy():
-  first = _resolved_settings(None)
-  second = _resolved_settings(None)
+def test_prompt_preset_returns_a_fresh_default_settings_copy(monkeypatch, capsys):
+  import src.main as module
 
-  first['ants'] = -1
+  configured_settings = {'ants': 17, 'beta': 2.0}
+  monkeypatch.setattr(module, 'settings', configured_settings)
+  monkeypatch.setattr(module, 'presets', {'fast': {'ants': 3}})
+  monkeypatch.setattr(builtins, 'input', lambda prompt: '')
 
-  assert first is not second
-  assert second['ants'] != -1
+  selected = module._prompt_preset('Choose preset')
+  selected['ants'] = -1
+
+  assert selected is not configured_settings
+  assert configured_settings['ants'] == 17
+  output = capsys.readouterr().out
+  assert 'Available Presets:' in output
+  assert '  - fast' in output
 
 
-def test_cli_rejects_unknown_preset_with_available_choices(capsys):
-  with pytest.raises(SystemExit) as error:
-    _parse_args(['--preset', 'not-a-preset'])
+def test_prompt_preset_loads_a_named_profile(monkeypatch):
+  import src.main as module
 
-  assert error.value.code == 2
-  assert 'invalid choice' in capsys.readouterr().err
+  loaded = {'ants': 3, 'beta': 4.0}
+  load_calls = []
+  monkeypatch.setattr(module, 'presets', {'fast': {'ants': 3}})
+  monkeypatch.setattr(module, 'load_profile', lambda name: load_calls.append(name) or loaded)
+  monkeypatch.setattr(builtins, 'input', lambda prompt: ' fast ')
+
+  assert module._prompt_preset('Choose preset') is loaded
+  assert load_calls == ['fast']
 
 
 def test_prompt_node_retries_invalid_input(monkeypatch, capsys):
@@ -84,13 +95,6 @@ def test_prompt_node_retries_invalid_input(monkeypatch, capsys):
 
   assert _prompt_node('Node', 3, 0, 9) == 5
   assert capsys.readouterr().out.splitlines() == ['Please enter a valid integer.', 'Please enter a value between 0 and 9.', 'Please enter a value between 0 and 9.']
-
-
-def _import_entrypoint(monkeypatch, module_name):
-  if module_name == 'main':
-    monkeypatch.syspath_prepend('src')
-  sys.modules.pop(module_name, None)
-  return importlib.import_module(module_name)
 
 
 def _configure_main(monkeypatch, module, *, selected=False, writer_class=None):
@@ -111,26 +115,23 @@ def _configure_main(monkeypatch, module, *, selected=False, writer_class=None):
     'f_min': 0.0002,
   }
   resolved_settings = {**base_settings, 'ants': 29, 'beta': 4.2} if selected else base_settings
-  monkeypatch.setattr(module, 'settings', base_settings)
-  monkeypatch.setattr(module, 'load_profile', lambda name: dict(resolved_settings))
+  monkeypatch.setattr(module, '_prompt_preset', lambda *_: dict(resolved_settings))
   monkeypatch.setattr(module, 'generate_square_city_graph', lambda *_: {'map': True})
   monkeypatch.setattr(module, 'generate_bus_line_square_city', lambda *_: {'bus': True})
   monkeypatch.setattr(module, 'merge_bus_and_map_graph', lambda *_: SIMPLE_GRAPH)
   endpoints = iter([0, 1])
   monkeypatch.setattr(module, '_prompt_node', lambda *_: next(endpoints))
   monkeypatch.setattr(module, 'dijkstra', lambda *_: [0, 1])
-  monkeypatch.setattr(module, 'draw_graph', lambda *_args, **_kwargs: None)
   if writer_class is not None:
     monkeypatch.setattr(module, 'ExperimentOutputWriter', writer_class)
   return resolved_settings
 
 
-@pytest.mark.parametrize('module_name', ['src.main', 'main'])
-@pytest.mark.parametrize('preset_name', [None, 'bus_friendly'])
-def test_documented_execution_contexts_forward_settings_callbacks_and_animations(monkeypatch, capsys, module_name, preset_name):
-  module = _import_entrypoint(monkeypatch, module_name)
+@pytest.mark.parametrize('selected_preset', [False, True])
+def test_main_forwards_prompted_settings_callbacks_and_animations(monkeypatch, capsys, selected_preset):
+  import src.main as module
+
   calls = []
-  draw_calls = []
   writers = []
   reference_route = [0, 2, 1]
 
@@ -158,14 +159,13 @@ def test_documented_execution_contexts_forward_settings_callbacks_and_animations
 
     return run
 
-  resolved_settings = _configure_main(monkeypatch, module, selected=preset_name is not None, writer_class=FakeWriter)
+  resolved_settings = _configure_main(monkeypatch, module, selected=selected_preset, writer_class=FakeWriter)
   monkeypatch.setattr(module, 'dijkstra', lambda *_: reference_route)
-  monkeypatch.setattr(module, 'draw_graph', lambda *args, **kwargs: draw_calls.append((args, kwargs)))
   monkeypatch.setattr(module, 'ACO', algorithm('ACO'))
   monkeypatch.setattr(module, 'ACS', algorithm('ACS'))
   monkeypatch.setattr(module, 'ABW', algorithm('ABW'))
 
-  module.main([] if preset_name is None else ['--preset', preset_name])
+  module.main()
 
   assert [call[0] for call in calls] == ['ACO', 'ACS', 'ABW']
   assert all((call[2], call[3]) == (0, 1) for call in calls)
@@ -198,26 +198,15 @@ def test_documented_execution_contexts_forward_settings_callbacks_and_animations
     resolved_settings['alfa'],
     resolved_settings['beta'],
   )
-  repository_tmp = Path(__file__).resolve().parents[1] / 'tmp'
-  assert [call[1]['save_path'] for call in draw_calls] == [repository_tmp / 'aco_route.html', repository_tmp / 'acs_route.html', repository_tmp / 'bwas_route.html']
-  assert [call[0][1] for call in draw_calls] == [[0, 1]] * 3
-  assert [call[1]['reference_path'] for call in draw_calls] == [reference_route] * 3
-  expected_route_metadata = [f'ACO route ({resolved_settings["ants"]} ants)', f'ACS route ({resolved_settings["ants"]} ants)', f'BWAS route ({resolved_settings["ants"]} ants)']
-  assert [call[1]['title'] for call in draw_calls] == expected_route_metadata
-  assert [call[1]['route_label'] for call in draw_calls] == expected_route_metadata
   assert [writer.animation_calls[0]['reference_path'] for writer in writers] == [reference_route] * 3
   assert [writer.animation_calls[0]['title'] for writer in writers] == ['ACO pheromone evolution', 'ACS pheromone evolution', 'BWAS pheromone evolution']
   assert all(f'{resolved_settings["ants"]} ants' in writer.animation_calls[0]['route_label'] for writer in writers)
   output = capsys.readouterr().out
+  assert f'  ants: {resolved_settings["ants"]}' in output
+  assert f'  beta: {resolved_settings["beta"]}' in output
   assert all(f'{name} route solution: [0, 1]' in output for name in ('ACO', 'ACS', 'ABW'))
   assert all(f'{name} cost: 1.0' in output and f'{name} epochs: 2' in output for name in ('ACO', 'ACS', 'ABW'))
   assert not any(forbidden in output for forbidden in (' time:', 'Dijkstra', 'walking', 'recommendation', 'better'))
-  if preset_name is None:
-    assert 'Preset:' not in output
-    assert '  ants:' not in output
-  else:
-    assert output.startswith(f'Preset: {preset_name}\n')
-    assert output.index('  ants: 29') < output.index('  beta: 4.2')
 
 
 def test_main_writes_multi_epoch_histories_and_animation_html_under_repository_tmp(monkeypatch, tmp_path):
@@ -249,7 +238,7 @@ def test_main_writes_multi_epoch_histories_and_animation_html_under_repository_t
   monkeypatch.setattr(module, 'ACS', algorithm)
   monkeypatch.setattr(module, 'ABW', algorithm)
 
-  module.main([])
+  module.main()
 
   output_directory = repository / 'tmp'
   for name, title in (('aco', 'ACO pheromone evolution'), ('acs', 'ACS pheromone evolution'), ('bwas', 'BWAS pheromone evolution')):
@@ -264,39 +253,43 @@ def test_main_writes_multi_epoch_histories_and_animation_html_under_repository_t
     assert '17 ants' in html
 
 
-def test_identical_endpoints_skip_algorithms_and_keep_zero_epoch_output(monkeypatch, capsys):
+def test_main_accepts_a_reprompted_distinct_endpoint(monkeypatch):
   import src.main as module
+
+  prompt_calls = []
 
   class FakeWriter:
     def __init__(self, _graph, _name):
       pass
 
     def __call__(self, _observation):
-      pytest.fail('trivial routes must not record algorithm epochs')
+      pass
 
     def write_animation(self, **_kwargs):
       return None
 
+  def prompt_node(prompt_text, *_args):
+    prompt_calls.append(prompt_text)
+    return next(endpoints)
+
   _configure_main(monkeypatch, module, writer_class=FakeWriter)
-  monkeypatch.setattr(module, '_prompt_node', lambda *_: 0)
-  monkeypatch.setattr(module, 'dijkstra', lambda *_: [0])
-  monkeypatch.setattr(module, 'ACO', lambda *_args, **_kwargs: pytest.fail('ACO must not run'))
-  monkeypatch.setattr(module, 'ACS', lambda *_args, **_kwargs: pytest.fail('ACS must not run'))
-  monkeypatch.setattr(module, 'ABW', lambda *_args, **_kwargs: pytest.fail('ABW must not run'))
+  endpoints = iter([0, 0, 1])
+  monkeypatch.setattr(module, '_prompt_node', prompt_node)
+  monkeypatch.setattr(module, 'dijkstra', lambda *_: [0, 1])
+  algorithm_calls = []
 
-  module.main([])
+  def algorithm(_graph, start_node, end_node, *_args, **_kwargs):
+    algorithm_calls.append((start_node, end_node))
+    return [start_node, end_node], 1.0, 0.0, 1
 
-  assert capsys.readouterr().out.splitlines() == [
-    'ACO route solution: [0]',
-    'ACO cost: 0.0',
-    'ACO epochs: 0',
-    'ACS route solution: [0]',
-    'ACS cost: 0.0',
-    'ACS epochs: 0',
-    'ABW route solution: [0]',
-    'ABW cost: 0.0',
-    'ABW epochs: 0',
-  ]
+  monkeypatch.setattr(module, 'ACO', algorithm)
+  monkeypatch.setattr(module, 'ACS', algorithm)
+  monkeypatch.setattr(module, 'ABW', algorithm)
+
+  module.main()
+
+  assert prompt_calls == ['Enter start node', 'Enter end node', 'Enter end node different from start node']
+  assert algorithm_calls == [(0, 1), (0, 1), (0, 1)]
 
 
 def test_bwas_uses_safe_defaults_when_optional_settings_are_absent(monkeypatch):
@@ -326,7 +319,7 @@ def test_bwas_uses_safe_defaults_when_optional_settings_are_absent(monkeypatch):
       return None
 
   _configure_main(monkeypatch, module, writer_class=FakeWriter)
-  monkeypatch.setattr(module, '_resolved_settings', lambda _: minimal_settings)
+  monkeypatch.setattr(module, '_prompt_preset', lambda *_: minimal_settings)
   monkeypatch.setattr(module, 'ACO', lambda *_args, **_kwargs: ([0, 1], 1.0, 0.0, 1))
   monkeypatch.setattr(module, 'ACS', lambda *_args, **_kwargs: ([0, 1], 1.0, 0.0, 1))
 
@@ -336,7 +329,7 @@ def test_bwas_uses_safe_defaults_when_optional_settings_are_absent(monkeypatch):
 
   monkeypatch.setattr(module, 'ABW', fake_bwas)
 
-  module.main([])
+  module.main()
 
   callback = captured.pop('epoch_callback')
   assert callable(callback)
